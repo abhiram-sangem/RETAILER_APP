@@ -25,11 +25,15 @@ MySQL Server
 Create a new database schema for the application:
 
 SQL
-CREATE DATABASE <shopping_cart_db>; 3. Configure Database Credentials
+
+CREATE DATABASE <shopping_cart_db>;
+
+3. Configure Database Credentials
 
 Open the project in your IDE, navigate to src/main/resources/application.properties, and update the connection properties with your local MySQL username and password:
 
 Properties
+
 spring.datasource.url=jdbc:mysql://localhost:3306/<shopping_cart_db>
 spring.datasource.username=YOUR_MYSQL_USERNAME
 spring.datasource.password=YOUR_MYSQL_PASSWORD

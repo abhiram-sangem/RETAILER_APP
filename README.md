@@ -35,7 +35,9 @@ Open the project in your IDE, navigate to src/main/resources/application.propert
 Properties
 
 spring.datasource.url=jdbc:mysql://localhost:3306/<shopping_cart_db>
+
 spring.datasource.username=YOUR_MYSQL_USERNAME
+
 spring.datasource.password=YOUR_MYSQL_PASSWORD
 
 # Automatically creates/updates database tables based on Java entities

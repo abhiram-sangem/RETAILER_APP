@@ -11,7 +11,7 @@ function Login({onLoginSuccess}) {
         e.preventDefault();
 
         try {
-            const response = await axios.post(`${API_URL}/api/auth/login`, {
+            const response = await axios.post(`/api/auth/login`, {
                 username,
                 password
             });

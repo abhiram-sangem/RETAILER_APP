@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-
+import Login from './Login.jsx'
 import './App.css'
 import { productService, invoiceService } from './services/api'
 
@@ -11,6 +11,11 @@ const DEFAULT_PRODUCTS = [
 ]
 
 export default function App() {
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const auth = localStorage.getItem('isAuthenticated')
+    return auth === 'true'
+  })
   // Current page view state: list, products, cart, invoices, or add/edit product.
   const [view, setView] = useState('list')
   const [products, setProducts] = useState([])
@@ -35,6 +40,13 @@ export default function App() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null)
   const [selectedInvoice, setSelectedInvoice] = useState(null)
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setView('login')
+    } 
+    
+  }, [isAuthenticated])
+
   // Fetch products once when component mounts.
   useEffect(() => {
     loadProducts()
@@ -51,6 +63,17 @@ export default function App() {
     [cart],
   )
 
+  // Handle successful login by updating authentication state and view.
+  function handleLoginSuccess() {
+    setIsAuthenticated(true)
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('isAuthenticated')
+    localStorage.removeItem('userRole')
+    setIsAuthenticated(false)
+    setView('list')
+  }
   // Load product list from backend; fallback to sample data on failure.
   function loadProducts() {
     productService.getProducts()

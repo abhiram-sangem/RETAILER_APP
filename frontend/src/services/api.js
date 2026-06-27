@@ -58,3 +58,38 @@ export const invoiceService = {
       return res.json()
     }),
 }
+
+export const customerService = {
+  getCustomers: () =>
+    fetch(`${API_URL}/api/customers`).then(res => {
+      if (!res.ok) throw new Error('Failed to load customers')
+      return res.json()
+    }),
+
+  addCustomer: (name) =>
+    fetch(`${API_URL}/api/customers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to add customer')
+      return res.json()
+    }),
+
+  updateCustomer: (id, name) =>
+    fetch(`${API_URL}/api/customers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to update customer')
+      return res.json()
+    }),
+
+  deleteCustomer: (id) =>
+    fetch(`${API_URL}/api/customers/${id}`, {
+      method: 'DELETE',
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to delete customer')
+    }),
+}

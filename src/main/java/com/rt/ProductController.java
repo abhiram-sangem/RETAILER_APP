@@ -2,6 +2,7 @@ package com.rt;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,51 +17,39 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/products")
 @CrossOrigin(origins = "*")
-public class CartController {
-    
-    private final ProductRepository productRepository;
+public class ProductController {
 
-    public CartController(ProductRepository productRepository) {
-        this.productRepository = productRepository;
-    }
-    
+    @Autowired
+    private ProductRepository productRepository;
+
     @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
         List<Product> products = productRepository.findAll();
         return ResponseEntity.ok(products);
     }
-    
-    @GetMapping("/{id}")
-    public ResponseEntity<Product> getProductById(@PathVariable Long id) {
-        return productRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-    }
-    
+
     @PostMapping
-    public ResponseEntity<Product> addProduct(@RequestBody Product product) {
-        Product savedProduct = productRepository.save(product);
-        return ResponseEntity.ok(savedProduct);
+    public Product addProduct(@RequestBody Product product) {
+        return productRepository.save(product);
     }
-    
+
     @PutMapping("/{id}")
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
         return productRepository.findById(id)
                 .map(product -> {
                     product.setName(productDetails.getName());
                     product.setPrice(productDetails.getPrice());
-                    // Fixed: This now uses getStock() instead of getQuantity()
-                    product.setStock(productDetails.getStock()); 
+                    product.setStock(productDetails.getStock()); // Update stock in DB
                     return ResponseEntity.ok(productRepository.save(product));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
-    
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         if (productRepository.existsById(id)) {
             productRepository.deleteById(id);
-            return ResponseEntity.ok().build();
+            return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
     }

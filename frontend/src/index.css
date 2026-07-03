@@ -1,4 +1,4 @@
-/* frontend/src/index.css */
+
 html, body {
   margin: 0;
   padding: 0;
@@ -12,5 +12,5 @@ html, body {
   height: 100vh;
   margin: 0;
   padding: 0;
-  display: block; /* Removes the default Vite centering */
+  display: block; 
 }

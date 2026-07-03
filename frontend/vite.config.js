@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Outputs directly to Spring Boot's static resources folder
-    outDir: '../src/main/resources/static',
+    // This outputs the build directly into Maven's target static folder
+    outDir: '../target/classes/static',
     emptyOutDir: true, 
   }
 })

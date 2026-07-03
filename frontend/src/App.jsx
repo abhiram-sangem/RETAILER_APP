@@ -3,9 +3,9 @@ import './App.css'
 import { productService, invoiceService, customerService } from './services/api'
 
 const DEFAULT_PRODUCTS = [
-  { id: '1', name: 'VESTS', price: 120 },
-  { id: '2', name: 'BRIEF', price: 320 },
-  { id: '3', name: 'SHIRT', price: 850 },
+  { id: '1', name: 'VESTS', price: 120, stock: 50 },
+  { id: '2', name: 'BRIEF', price: 320, stock: 30 },
+  { id: '3', name: 'SHIRT', price: 850, stock: 15 },
 ]
 
 export default function App() {
@@ -14,10 +14,7 @@ export default function App() {
   const [invoices, setInvoices] = useState([])
   const [customers, setCustomers] = useState([])
 
-  // Sidebar Submenu State
   const [isSalesMenuOpen, setIsSalesMenuOpen] = useState(true)
-
-  // Selected customer for the active shopping session
   const [activeCustomer, setActiveCustomer] = useState(null)
 
   const [cart, setCart] = useState(() => {
@@ -29,11 +26,16 @@ export default function App() {
   })
   const [error, setError] = useState('')
 
-  // Product Modal States
+  // Product Modal States (For Name & Price)
   const [showProductModal, setShowProductModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
-  const [productForm, setProductForm] = useState({ name: '', price: '' })
+  const [productForm, setProductForm] = useState({ name: '', price: '', stock: '' })
+
+  // Inventory Modal States (For Stock Only)
+  const [showInventoryModal, setShowInventoryModal] = useState(false)
+  const [editingInventoryId, setEditingInventoryId] = useState(null)
+  const [inventoryForm, setInventoryForm] = useState({ stock: '' })
 
   // Customer Modal States
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -41,7 +43,6 @@ export default function App() {
   const [editingCustomerId, setEditingCustomerId] = useState(null)
   const [customerForm, setCustomerForm] = useState({ name: '' })
 
-  // Invoice States
   const [selectedInvoice, setSelectedInvoice] = useState(null)
 
   useEffect(() => {
@@ -75,9 +76,18 @@ export default function App() {
 
   // --- Cart & Sale Functions ---
   function addToCart(product) {
+    if (product.stock <= 0) {
+      window.alert(`Sorry, ${product.name} is currently out of stock!`)
+      return
+    }
+
     setCart(current => {
       const existing = current.find(item => item.id === product.id)
       if (existing) {
+        if (existing.quantity >= product.stock) {
+          window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`)
+          return current
+        }
         return current.map(item =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         )
@@ -88,7 +98,14 @@ export default function App() {
 
   function updateQuantity(index, quantity) {
     if (quantity < 1) return
-    setCart(current => current.map((item, idx) => idx === index ? { ...item, quantity } : item))
+    setCart(current => {
+      const item = current[index]
+      if (quantity > item.stock) {
+        window.alert(`Cannot exceed available inventory (${item.stock} left).`)
+        return current
+      }
+      return current.map((itm, idx) => idx === index ? { ...itm, quantity } : itm)
+    })
   }
 
   function removeCartItem(index) {
@@ -112,9 +129,9 @@ export default function App() {
         setCart([])
         setActiveCustomer(null)
         setView('customer')
-        loadProducts()
+        loadProducts() 
       })
-      .catch(() => window.alert('Failed to complete sale.'))
+      .catch((err) => window.alert('Failed to complete sale. ' + err.message))
   }
 
   function cancelSale() {
@@ -125,19 +142,28 @@ export default function App() {
     }
   }
 
-  // --- Product Management Functions ---
+  // --- Product Management (Name & Price Only) ---
   function handleSaveProduct() {
     const name = productForm.name.trim()
     const price = parseFloat(productForm.price)
-    if (!name || !price || price <= 0) return window.alert('Invalid product details')
+    
+    if (!name || !price || price <= 0) {
+      return window.alert('Invalid details. Ensure price is greater than 0.')
+    }
 
     if (isEditMode) {
-      productService.updateProduct(editingProductId, name, price).then(() => {
+      // Find current stock to preserve it during name/price update
+      const existingProduct = products.find(p => p.id === editingProductId)
+      const preserveStock = existingProduct ? existingProduct.stock : 0
+
+      productService.updateProduct(editingProductId, name, price, preserveStock).then(() => {
         loadProducts()
         closeProductModal()
       })
     } else {
-      productService.addProduct(name, price).then(() => {
+      // Allow setting initial stock only when creating a brand new product
+      const initialStock = parseInt(productForm.stock, 10) || 0
+      productService.addProduct(name, price, initialStock).then(() => {
         loadProducts()
         closeProductModal()
       })
@@ -152,7 +178,38 @@ export default function App() {
 
   function closeProductModal() {
     setShowProductModal(false)
-    setProductForm({ name: '', price: '' })
+    setProductForm({ name: '', price: '', stock: '' })
+  }
+
+  // --- Inventory Management (Stock Only) ---
+  function openInventoryModal(product) {
+    setEditingInventoryId(product.id)
+    setInventoryForm({ stock: product.stock.toString() })
+    setShowInventoryModal(true)
+  }
+
+  function closeInventoryModal() {
+    setShowInventoryModal(false)
+    setEditingInventoryId(null)
+    setInventoryForm({ stock: '' })
+  }
+
+  function handleSaveInventory() {
+    const newStock = parseInt(inventoryForm.stock, 10)
+    if (isNaN(newStock) || newStock < 0) {
+      return window.alert('Stock must be 0 or greater.')
+    }
+
+    const product = products.find(p => p.id === editingInventoryId)
+    if (!product) return
+
+    // Preserve the existing name and price, ONLY update the stock
+    productService.updateProduct(product.id, product.name, product.price, newStock)
+      .then(() => {
+        loadProducts()
+        closeInventoryModal()
+      })
+      .catch(() => window.alert('Failed to update inventory.'))
   }
 
   // --- Customer Management Functions ---
@@ -189,7 +246,6 @@ export default function App() {
     setCustomerForm({ name: '' })
   }
 
-  // --- Invoice/Sales List Functions ---
   function handleViewSalesList() {
     invoiceService.getInvoices().then(data => {
       setInvoices(data || [])
@@ -240,6 +296,13 @@ export default function App() {
         </div>
 
         <button 
+          className={`menu-btn ${view === 'inventory' ? 'active' : ''}`}
+          onClick={() => setView('inventory')}
+        >
+          Inventory
+        </button>
+
+        <button 
           className={`menu-btn ${view === 'customers-manage' ? 'active' : ''}`}
           onClick={() => setView('customers-manage')}
         >
@@ -259,7 +322,7 @@ export default function App() {
         
         {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
 
-        {/* 1. SELECT CUSTOMER (New Sales - Step 1) */}
+        {/* 1. SELECT CUSTOMER */}
         {view === 'customer' && (
           <div className="card text-center">
             <h2 className="card-title" style={{ marginBottom: '1.5rem' }}>Start a New Sale</h2>
@@ -297,7 +360,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 2. SHOPPING LIST (New Sales - Step 2) */}
+        {/* 2. SHOPPING LIST */}
         {view === 'list' && (
           <div className="card">
             <div className="card-header">
@@ -313,22 +376,33 @@ export default function App() {
             </div>
 
             <ul className="product-grid">
-              {products.map(product => (
-                <li key={product.id} className="product-card">
-                  <div className="product-info">
-                    <div className="product-name">{product.name}</div>
-                    <div className="price-text">{product.price} rs</div>
-                  </div>
-                  <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => addToCart(product)}>
-                    Add Item
-                  </button>
-                </li>
-              ))}
+              {products.map(product => {
+                const isOutOfStock = product.stock <= 0;
+                return (
+                  <li key={product.id} className="product-card" style={{ opacity: isOutOfStock ? 0.6 : 1 }}>
+                    <div className="product-info">
+                      <div className="product-name">{product.name}</div>
+                      <div className="price-text">{product.price} rs</div>
+                      <div style={{ fontSize: '0.9rem', marginTop: '5px', color: isOutOfStock ? '#ef4444' : '#64748b', fontWeight: 'bold' }}>
+                        {isOutOfStock ? 'Out of Stock' : `In Stock: ${product.stock}`}
+                      </div>
+                    </div>
+                    <button 
+                      className={isOutOfStock ? "btn btn-secondary" : "btn btn-primary"} 
+                      style={{ width: '100%', cursor: isOutOfStock ? 'not-allowed' : 'pointer' }} 
+                      onClick={() => addToCart(product)}
+                      disabled={isOutOfStock}
+                    >
+                      {isOutOfStock ? 'Out of Stock' : 'Add Item'}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
 
-        {/* 3. SHOPPING CART (New Sales - Step 3) */}
+        {/* 3. SHOPPING CART */}
         {view === 'cart' && (
           <div className="card">
             <div className="card-header">
@@ -352,11 +426,11 @@ export default function App() {
                 <tbody>
                   {cart.length ? cart.map((item, idx) => (
                     <tr key={`${item.id}-${idx}`}>
-                      <td>{item.name}</td>
+                      <td>{item.name} <span style={{fontSize:'0.8rem', color:'#64748b'}}>(Max: {item.stock})</span></td>
                       <td>{item.price} rs</td>
                       <td>
                         <input
-                          type="number" className="quantity-input" min="1" value={item.quantity}
+                          type="number" className="quantity-input" min="1" max={item.stock} value={item.quantity}
                           onChange={e => updateQuantity(idx, Number(e.target.value))}
                         />
                       </td>
@@ -414,7 +488,7 @@ export default function App() {
               </table>
             </div>
             
-            {/* Sales Details UI nested under the table */}
+            {/* Sales Details Modal */}
             {selectedInvoice && (
               <div className="card" style={{ marginTop: '2rem', border: '1px solid #e2e8f0', boxShadow: 'none' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Sale #{selectedInvoice.id} Details</h3>
@@ -447,7 +521,44 @@ export default function App() {
           </div>
         )}
 
-        {/* 5. MANAGE CUSTOMERS */}
+        {/* 5. INVENTORY MANAGEMENT (NEW) */}
+        {view === 'inventory' && (
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title">Inventory</h2>
+            </div>
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product Name</th>
+                    <th>Current Stock</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.map((product, index) => (
+                    <tr key={product.id}>
+                      <td>{index + 1}</td>
+                      <td>{product.name}</td>
+                      <td style={{ fontWeight: 'bold', fontSize: '1.1rem', color: product.stock > 10 ? '#10b981' : (product.stock > 0 ? '#f59e0b' : '#ef4444') }}>
+                        {product.stock} {product.stock <= 0 && '(Out of Stock)'}
+                      </td>
+                      <td>
+                        <button className="btn btn-warning" onClick={() => openInventoryModal(product)}>
+                          Update Stock
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 6. MANAGE CUSTOMERS */}
         {view === 'customers-manage' && (
           <div className="card">
             <div className="card-header">
@@ -493,14 +604,14 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. MANAGE PRODUCTS */}
+        {/* 7. MANAGE PRODUCTS */}
         {view === 'products' && (
           <div className="card">
             <div className="card-header">
-              <h2 className="card-title">Product Management</h2>
+              <h2 className="card-title">Product Details</h2>
               <button className="btn btn-primary" onClick={() => {
                 setIsEditMode(false)
-                setProductForm({ name: '', price: '' })
+                setProductForm({ name: '', price: '', stock: '' })
                 setShowProductModal(true)
               }}>
                 + Add New Product
@@ -529,7 +640,7 @@ export default function App() {
                             setEditingProductId(product.id)
                             setProductForm({ name: product.name, price: product.price.toString() })
                             setShowProductModal(true)
-                          }}>Edit</button>
+                          }}>Edit Details</button>
                           <button className="btn btn-danger" onClick={() => handleDeleteProduct(product.id, product.name)}>Delete</button>
                         </div>
                       </td>
@@ -543,12 +654,38 @@ export default function App() {
       </main>
 
       {/* --- MODALS --- */}
+
+      {/* INVENTORY UPDATE MODAL */}
+      {showInventoryModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 style={{ marginTop: 0 }}>Update Inventory</h3>
+            <p style={{ marginBottom: '1rem', color: '#64748b' }}>
+              Updating stock for: <strong>{products.find(p => p.id === editingInventoryId)?.name}</strong>
+            </p>
+            <div>
+              <label className="form-label">New Total Stock:</label>
+              <input 
+                type="number" 
+                className="form-control"
+                value={inventoryForm.stock} 
+                onChange={e => setInventoryForm({ stock: e.target.value })} 
+                min="0"
+              />
+            </div>
+            <div className="modal-actions">
+              <button onClick={closeInventoryModal} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleSaveInventory} className="btn btn-success">Save Stock</button>
+            </div>
+          </div>
+        </div>
+      )}
       
-      {/* PRODUCT MODAL */}
+      {/* PRODUCT MODAL (Name & Price) */}
       {showProductModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3>{isEditMode ? 'Edit Product' : 'Add New Product'}</h3>
+            <h3 style={{ marginTop: 0 }}>{isEditMode ? 'Edit Product Details' : 'Add New Product'}</h3>
             <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">Name:</label>
               <input 
@@ -557,7 +694,7 @@ export default function App() {
                 onChange={e => setProductForm({ ...productForm, name: e.target.value })} 
               />
             </div>
-            <div>
+            <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">Price (rs):</label>
               <input 
                 type="number" 
@@ -566,6 +703,18 @@ export default function App() {
                 onChange={e => setProductForm({ ...productForm, price: e.target.value })} 
               />
             </div>
+            {/* Only show Initial Stock when CREATING a new product */}
+            {!isEditMode && (
+              <div style={{ marginBottom: '1rem' }}>
+                <label className="form-label">Initial Stock:</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={productForm.stock} 
+                  onChange={e => setProductForm({ ...productForm, stock: e.target.value })} 
+                />
+              </div>
+            )}
             <div className="modal-actions">
               <button onClick={closeProductModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveProduct} className="btn btn-success">Save</button>
@@ -578,7 +727,7 @@ export default function App() {
       {showCustomerModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3>{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
+            <h3 style={{ marginTop: 0 }}>{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
             <div>
               <label className="form-label">Customer Name:</label>
               <input 

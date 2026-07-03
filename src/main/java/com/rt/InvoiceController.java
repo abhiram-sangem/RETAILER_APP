@@ -1,5 +1,6 @@
 package com.rt;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -25,14 +26,12 @@ public class InvoiceController {
     @Autowired
     private ProductRepository productRepository;
 
-    // Get all invoices
     @GetMapping
     public ResponseEntity<List<Invoice>> getAllInvoices() {
         List<Invoice> invoices = invoiceRepository.findAll();
         return ResponseEntity.ok(invoices);
     }
 
-    // Get invoice by ID
     @GetMapping("/{id}")
     public ResponseEntity<Invoice> getInvoiceById(@PathVariable Long id) {
         return invoiceRepository.findById(id)
@@ -40,9 +39,8 @@ public class InvoiceController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Create invoice from cart data
     @PostMapping("/create")
-    public ResponseEntity<Invoice> createInvoice(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> createInvoice(@RequestBody Map<String, Object> request) {
         String customerName = (String) request.get("customerName");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> cartItems = (List<Map<String, Object>>) request.get("cartItems");
@@ -53,6 +51,7 @@ public class InvoiceController {
 
         Invoice invoice = new Invoice();
         invoice.setCustomerName(customerName);
+        invoice.setOrderDate(LocalDateTime.now());
         double totalAmount = 0.0;
 
         for (Map<String, Object> item : cartItems) {
@@ -61,6 +60,15 @@ public class InvoiceController {
 
             Product product = productRepository.findById(productId).orElse(null);
             if (product != null) {
+                // INVENTORY LOGIC: Check if we have enough stock before selling!
+                if (product.getStock() < quantity) {
+                    return ResponseEntity.badRequest().body("Not enough stock for " + product.getName());
+                }
+
+                // INVENTORY LOGIC: Deduct the sold quantity from the available stock
+                product.setStock(product.getStock() - quantity);
+                productRepository.save(product);
+
                 double price = product.getPrice();
                 InvoiceItem invoiceItem = new InvoiceItem(invoice, product, quantity, price);
                 invoice.addItem(invoiceItem);
@@ -73,14 +81,13 @@ public class InvoiceController {
         return ResponseEntity.ok(savedInvoice);
     }
 
-    // Add new invoice
     @PostMapping
     public ResponseEntity<Invoice> addInvoice(@RequestBody Invoice invoice) {
+        invoice.setOrderDate(LocalDateTime.now());
         Invoice savedInvoice = invoiceRepository.save(invoice);
         return ResponseEntity.ok(savedInvoice);
     }
 
-    // Update invoice
     @PutMapping("/{id}")
     public ResponseEntity<Invoice> updateInvoice(@PathVariable Long id, @RequestBody Invoice invoiceDetails) {
         return invoiceRepository.findById(id)
@@ -92,7 +99,6 @@ public class InvoiceController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Delete invoice
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteInvoice(@PathVariable Long id) {
         if (invoiceRepository.existsById(id)) {
@@ -101,5 +107,4 @@ public class InvoiceController {
         }
         return ResponseEntity.notFound().build();
     }
-
 }

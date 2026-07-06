@@ -1,18 +1,9 @@
 package com.rt;
 
 import java.util.List;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/customers")
@@ -39,7 +30,12 @@ public class CustomerController {
     public ResponseEntity<Customer> updateCustomer(@PathVariable Long id, @RequestBody Customer customerDetails) {
         return customerRepository.findById(id)
                 .map(customer -> {
-                    customer.setName(customerDetails.getName());
+                    // Update with null checks to avoid wiping data accidentally
+                    if (customerDetails.getName() != null) customer.setName(customerDetails.getName());
+                    if (customerDetails.getGstno() != null) customer.setGstno(customerDetails.getGstno());
+                    if (customerDetails.getMobile() != null) customer.setMobile(customerDetails.getMobile());
+                    if (customerDetails.getCity() != null) customer.setCity(customerDetails.getCity());
+                    
                     return ResponseEntity.ok(customerRepository.save(customer));
                 })
                 .orElse(ResponseEntity.notFound().build());

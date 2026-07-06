@@ -30,7 +30,7 @@ export default function App() {
   const [showProductModal, setShowProductModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
-  const [productForm, setProductForm] = useState({ name: '', price: '', stock: '' })
+  const [productForm, setProductForm] = useState({ name: '', price: '', stock: '' , purchasePrice: '' })
 
   // Inventory Modal States (For Stock Only)
   const [showInventoryModal, setShowInventoryModal] = useState(false)
@@ -41,7 +41,7 @@ export default function App() {
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [isCustomerEditMode, setIsCustomerEditMode] = useState(false)
   const [editingCustomerId, setEditingCustomerId] = useState(null)
-  const [customerForm, setCustomerForm] = useState({ name: '' })
+  const [customerForm, setCustomerForm] = useState({ name: '', gstno: '', mobile: '', city: '' })
 
   const [selectedInvoice, setSelectedInvoice] = useState(null)
 
@@ -146,7 +146,8 @@ export default function App() {
   function handleSaveProduct() {
     const name = productForm.name.trim()
     const price = parseFloat(productForm.price)
-    
+    const purchasePrice = parseFloat(productForm.purchasePrice)
+
     if (!name || !price || price <= 0) {
       return window.alert('Invalid details. Ensure price is greater than 0.')
     }
@@ -156,14 +157,14 @@ export default function App() {
       const existingProduct = products.find(p => p.id === editingProductId)
       const preserveStock = existingProduct ? existingProduct.stock : 0
 
-      productService.updateProduct(editingProductId, name, price, preserveStock).then(() => {
+      productService.updateProduct(editingProductId, name, price, preserveStock, purchasePrice).then(() => {
         loadProducts()
         closeProductModal()
       })
     } else {
       // Allow setting initial stock only when creating a brand new product
       const initialStock = parseInt(productForm.stock, 10) || 0
-      productService.addProduct(name, price, initialStock).then(() => {
+      productService.addProduct(name, price, initialStock, purchasePrice).then(() => {
         loadProducts()
         closeProductModal()
       })
@@ -178,7 +179,7 @@ export default function App() {
 
   function closeProductModal() {
     setShowProductModal(false)
-    setProductForm({ name: '', price: '', stock: '' })
+    setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
   }
 
   // --- Inventory Management (Stock Only) ---
@@ -215,15 +216,20 @@ export default function App() {
   // --- Customer Management Functions ---
   function handleSaveCustomer() {
     const name = customerForm.name.trim()
+    const gstno = customerForm.gstno.trim()
+    const mobile = customerForm.mobile.trim()
+    const city = customerForm.city.trim()
+
     if (!name) return window.alert('Name is required')
+    
 
     if (isCustomerEditMode) {
-      customerService.updateCustomer(editingCustomerId, name).then(() => {
+      customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city).then(() => {
         loadCustomers()
         closeCustomerModal()
       })
     } else {
-      customerService.addCustomer(name).then(() => {
+      customerService.addCustomer(name, gstno, mobile, city).then(() => {
         loadCustomers()
         closeCustomerModal()
       })
@@ -243,7 +249,7 @@ export default function App() {
 
   function closeCustomerModal() {
     setShowCustomerModal(false)
-    setCustomerForm({ name: '' })
+    setCustomerForm({ name: '' , gstno: '', mobile: '', city: '' })
   }
 
   function handleViewSalesList() {
@@ -340,10 +346,7 @@ export default function App() {
                 {customers.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
-              </select>
-              <p className="help-text">
-                Don't see your name? Go to "Manage Customers" to add it.
-              </p>
+              </select>              
             </div>
             <button 
               className="btn btn-success"
@@ -565,7 +568,7 @@ export default function App() {
               <h2 className="card-title">Customer Management</h2>
               <button className="btn btn-primary" onClick={() => {
                 setIsCustomerEditMode(false)
-                setCustomerForm({ name: '' })
+                setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
                 setShowCustomerModal(true)
               }}>
                 + Add New Customer
@@ -577,6 +580,9 @@ export default function App() {
                   <tr>
                     <th>#</th>
                     <th>Customer Name</th>
+                    <th>GST No</th>
+                    <th>Mobile</th>
+                    <th>City</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -585,12 +591,15 @@ export default function App() {
                     <tr key={c.id}>
                       <td>{index + 1}</td>
                       <td>{c.name}</td>
+                      <td>{c.gstno}</td>
+                      <td>{c.mobile}</td>
+                      <td>{c.city}</td>
                       <td>
                         <div className="btn-group">
                           <button className="btn btn-warning" onClick={() => {
                             setIsCustomerEditMode(true)
                             setEditingCustomerId(c.id)
-                            setCustomerForm({ name: c.name })
+                            setCustomerForm({ name: c.name, gstno: c.gstno || '', mobile: c.mobile || '', city: c.city || '' })
                             setShowCustomerModal(true)
                           }}>Edit</button>
                           <button className="btn btn-danger" onClick={() => handleDeleteCustomer(c.id, c.name)}>Delete</button>
@@ -611,7 +620,7 @@ export default function App() {
               <h2 className="card-title">Product Details</h2>
               <button className="btn btn-primary" onClick={() => {
                 setIsEditMode(false)
-                setProductForm({ name: '', price: '', stock: '' })
+                setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
                 setShowProductModal(true)
               }}>
                 + Add New Product
@@ -623,6 +632,7 @@ export default function App() {
                   <tr>
                     <th>#</th>
                     <th>Product Name</th>
+                    <th>Purchase Price (rs)</th>
                     <th>Price (rs)</th>
                     <th>Actions</th>
                   </tr>
@@ -632,13 +642,18 @@ export default function App() {
                     <tr key={product.id}>
                       <td>{index + 1}</td>
                       <td>{product.name}</td>
+                      <td className="price-text" style={{color: '#f59e0b'}}>{product.purchasePrice || 0} rs</td>
                       <td className="price-text">{product.price} rs</td>
                       <td>
                         <div className="btn-group">
                           <button className="btn btn-warning" onClick={() => {
                             setIsEditMode(true)
                             setEditingProductId(product.id)
-                            setProductForm({ name: product.name, price: product.price.toString() })
+                            setProductForm({ 
+                              name: product.name, 
+                              purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0', 
+                              price: product.price.toString()
+                             })
                             setShowProductModal(true)
                           }}>Edit Details</button>
                           <button className="btn btn-danger" onClick={() => handleDeleteProduct(product.id, product.name)}>Delete</button>
@@ -695,7 +710,16 @@ export default function App() {
               />
             </div>
             <div style={{ marginBottom: '1rem' }}>
-              <label className="form-label">Price (rs):</label>
+              <label className="form-label">Purchase Price (rs):</label>
+              <input 
+                type="number" 
+                className="form-control"
+                value={productForm.purchasePrice} 
+                onChange={e => setProductForm({ ...productForm, purchasePrice: e.target.value })} 
+              />
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label className="form-label">Selling Price (rs):</label>
               <input 
                 type="number" 
                 className="form-control"
@@ -728,16 +752,51 @@ export default function App() {
         <div className="modal-overlay">
           <div className="modal-content">
             <h3 style={{ marginTop: 0 }}>{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
-            <div>
+            
+            <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">Customer Name:</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="form-control"
-                value={customerForm.name} 
-                onChange={e => setCustomerForm({ name: e.target.value })} 
+                value={customerForm.name}
+                onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })}
                 placeholder="Enter customer name"
               />
             </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label className="form-label">GST No:</label>
+              <input
+                type="text"
+                className="form-control"
+                value={customerForm.gstno}
+                onChange={e => setCustomerForm({ ...customerForm, gstno: e.target.value })}
+                placeholder="Enter GST Number"
+              />
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label className="form-label">Mobile:</label>
+              <input
+                type="text"
+                className="form-control"
+                value={customerForm.mobile}
+                onChange={e => setCustomerForm({ ...customerForm, mobile: e.target.value })}
+                placeholder="Enter Mobile Number"
+              />
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label className="form-label">City:</label>
+              <input
+                type="text"
+                className="form-control"
+                value={customerForm.city}
+                onChange={e => setCustomerForm({ ...customerForm, city: e.target.value })}
+                placeholder="Enter City"
+              />
+            </div>
+
             <div className="modal-actions">
               <button onClick={closeCustomerModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveCustomer} className="btn btn-success">Save</button>

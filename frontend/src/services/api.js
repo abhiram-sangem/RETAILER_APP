@@ -7,21 +7,23 @@ export const productService = {
       return res.json()
     }),
 
-  addProduct: (name, price) =>
+  // FIXED: Added 'stock' parameter and sending 'stock' in the JSON body
+  addProduct: (name, price, stock, purchasePrice) =>
     fetch(`${API_URL}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, price, quantity: 0 }),
+      body: JSON.stringify({ name, price, stock, purchasePrice }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add product')
       return res.json()
     }),
 
-  updateProduct: (id, name, price) =>
+  // FIXED: Added 'stock' parameter and sending 'stock' in the JSON body
+  updateProduct: (id, name, price, stock, purchasePrice) =>
     fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, price, quantity: 0 }),
+      body: JSON.stringify({ name, price, stock, purchasePrice }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update product')
       return res.json()
@@ -66,21 +68,21 @@ export const customerService = {
       return res.json()
     }),
 
-  addCustomer: (name) =>
+  addCustomer: (name, gstno, mobile, city) =>
     fetch(`${API_URL}/api/customers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, gstno, mobile, city }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add customer')
       return res.json()
     }),
 
-  updateCustomer: (id, name) =>
+  updateCustomer: (id, name, gstno, mobile, city) =>
     fetch(`${API_URL}/api/customers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, gstno, mobile, city }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update customer')
       return res.json()

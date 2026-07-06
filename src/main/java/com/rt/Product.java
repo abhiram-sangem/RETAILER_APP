@@ -21,6 +21,9 @@ public class Product {
     @Column(nullable = false)
     private Double price;
 
+    @Column(nullable = false)
+    private Double purchasePrice;
+
     // THIS IS THE INVENTORY FIELD THAT WAS MISSING
     @Column(nullable = false, columnDefinition = "integer default 0")
     private Integer stock; 
@@ -66,4 +69,12 @@ public class Product {
     public void setStock(Integer stock) {
         this.stock = stock;
     }
+
+    public Double getPurchasePrice() {
+        return purchasePrice;
+    }
+    public void setPurchasePrice(Double purchasePrice) {
+        this.purchasePrice = purchasePrice;
+    }
+    
 }

@@ -2,7 +2,6 @@ package com.rt;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,27 +18,48 @@ import org.springframework.web.bind.annotation.RestController;
 @CrossOrigin(origins = "*")
 public class ProductController {
 
-    @Autowired
-    private ProductRepository productRepository;
+    private final ProductRepository productRepository;
+
+    public ProductController(ProductRepository productRepository) {
+        this.productRepository = productRepository;
+    }
 
     @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
-        List<Product> products = productRepository.findAll();
-        return ResponseEntity.ok(products);
+        return ResponseEntity.ok(productRepository.findAll());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Product> getProductById(@PathVariable Long id) {
+        return productRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public Product addProduct(@RequestBody Product product) {
-        return productRepository.save(product);
+    public ResponseEntity<Product> addProduct(@RequestBody Product product) {
+        return ResponseEntity.ok(productRepository.save(product));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
         return productRepository.findById(id)
                 .map(product -> {
-                    product.setName(productDetails.getName());
-                    product.setPrice(productDetails.getPrice());
-                    product.setStock(productDetails.getStock()); // Update stock in DB
+                    // NULL CHECKS ADDED HERE: 
+                    // This stops the DataIntegrityViolationException
+                    if (productDetails.getName() != null) {
+                        product.setName(productDetails.getName());
+                    }
+                    if (productDetails.getPrice() != null) {
+                        product.setPrice(productDetails.getPrice());
+                    }
+                    if (productDetails.getStock() != null) {
+                        product.setStock(productDetails.getStock());
+                    }
+                    if (productDetails.getPurchasePrice() != null) {
+                        product.setPurchasePrice(productDetails.getPurchasePrice());
+                    }
+                    
                     return ResponseEntity.ok(productRepository.save(product));
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -49,7 +69,7 @@ public class ProductController {
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         if (productRepository.existsById(id)) {
             productRepository.deleteById(id);
-            return ResponseEntity.noContent().build();
+            return ResponseEntity.ok().build();
         }
         return ResponseEntity.notFound().build();
     }

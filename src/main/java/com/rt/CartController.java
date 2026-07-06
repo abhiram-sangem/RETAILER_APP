@@ -24,39 +24,47 @@ public class CartController {
         this.productRepository = productRepository;
     }
     
-    @GetMapping
+    @GetMapping("/cart")
     public ResponseEntity<List<Product>> getAllProducts() {
         List<Product> products = productRepository.findAll();
         return ResponseEntity.ok(products);
     }
     
-    @GetMapping("/{id}")
+    @GetMapping("/cart/{id}")
     public ResponseEntity<Product> getProductById(@PathVariable Long id) {
         return productRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
     
-    @PostMapping
+    @PostMapping("/cart")
     public ResponseEntity<Product> addProduct(@RequestBody Product product) {
         Product savedProduct = productRepository.save(product);
         return ResponseEntity.ok(savedProduct);
     }
     
-    @PutMapping("/{id}")
+    @PutMapping("/cart/{id}")
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
         return productRepository.findById(id)
                 .map(product -> {
-                    product.setName(productDetails.getName());
-                    product.setPrice(productDetails.getPrice());
-                    // Fixed: This now uses getStock() instead of getQuantity()
-                    product.setStock(productDetails.getStock()); 
+                    // FIXED: Added null checks. 
+                    // Now, it only updates the field if the frontend actually sent it!
+                    if (productDetails.getName() != null) {
+                        product.setName(productDetails.getName());
+                    }
+                    if (productDetails.getPrice() != null) {
+                        product.setPrice(productDetails.getPrice());
+                    }
+                    if (productDetails.getStock() != null) {
+                        product.setStock(productDetails.getStock()); 
+                    }
+                    
                     return ResponseEntity.ok(productRepository.save(product));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
     
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/cart/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         if (productRepository.existsById(id)) {
             productRepository.deleteById(id);

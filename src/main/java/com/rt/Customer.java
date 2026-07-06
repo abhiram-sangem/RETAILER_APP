@@ -14,9 +14,18 @@ public class Customer {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    
     @Column(nullable = false)
     private String name;
+
+    @Column(nullable = false)
+    private String gstno;
+
+    @Column(nullable = false)
+    private String mobile;
+
+    @Column(nullable = false)
+    private String city;
 
     public Customer() {
     }
@@ -40,4 +49,30 @@ public class Customer {
     public void setName(String name) {
         this.name = name;
     }
+
+    public String getGstno() {
+        return gstno;
+    }
+
+    public void setGstno(String gstno) {
+        this.gstno = gstno;
+    }
+
+    public String getMobile() {
+        return mobile;
+    }
+
+    public void setMobile(String mobile) {
+        this.mobile = mobile;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public void setCity(String city) {
+        this.city = city;
+    }
+
+
 }

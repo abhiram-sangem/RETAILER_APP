@@ -3,9 +3,9 @@ import './App.css'
 import { productService, invoiceService, customerService } from './services/api'
 
 const DEFAULT_PRODUCTS = [
-  { id: '1', name: 'VESTS', price: 120, stock: 50 },
-  { id: '2', name: 'BRIEF', price: 320, stock: 30 },
-  { id: '3', name: 'SHIRT', price: 850, stock: 15 },
+  { id: '1', name: 'VESTS', purchasePrice: 100, price: 120, stock: 50 },
+  { id: '2', name: 'BRIEF', purchasePrice: 250, price: 320, stock: 30 },
+  { id: '3', name: 'SHIRT', purchasePrice: 600, price: 850, stock: 15 },
 ]
 
 export default function App() {
@@ -13,9 +13,12 @@ export default function App() {
   const [products, setProducts] = useState([])
   const [invoices, setInvoices] = useState([])
   const [customers, setCustomers] = useState([])
-
   const [isSalesMenuOpen, setIsSalesMenuOpen] = useState(true)
   const [activeCustomer, setActiveCustomer] = useState(null)
+  
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
   const [cart, setCart] = useState(() => {
     try {
@@ -26,13 +29,13 @@ export default function App() {
   })
   const [error, setError] = useState('')
 
-  // Product Modal States (For Name & Price)
+  // Product Modal States
   const [showProductModal, setShowProductModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
-  const [productForm, setProductForm] = useState({ name: '', price: '', stock: '' , purchasePrice: '' })
+  const [productForm, setProductForm] = useState({ name: '', purchasePrice: '', price: '', stock: '' })
 
-  // Inventory Modal States (For Stock Only)
+  // Inventory Modal States
   const [showInventoryModal, setShowInventoryModal] = useState(false)
   const [editingInventoryId, setEditingInventoryId] = useState(null)
   const [inventoryForm, setInventoryForm] = useState({ stock: '' })
@@ -54,9 +57,31 @@ export default function App() {
     localStorage.setItem('cart', JSON.stringify(cart))
   }, [cart])
 
+  // Clear search bar whenever switching screens
+  useEffect(() => {
+    setSearchQuery('')
+  }, [view])
+
   const cartTotal = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [cart],
+    [cart]
+  )
+
+  // --- Search Filtering Logic ---
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (c.mobile && c.mobile.includes(searchQuery)) ||
+    (c.city && c.city.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (c.gstno && c.gstno.toLowerCase().includes(searchQuery.toLowerCase()))
+  )
+
+  const filteredInvoices = invoices.filter(i => 
+    i.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.id.toString().includes(searchQuery)
   )
 
   function loadProducts() {
@@ -80,7 +105,6 @@ export default function App() {
       window.alert(`Sorry, ${product.name} is currently out of stock!`)
       return
     }
-
     setCart(current => {
       const existing = current.find(item => item.id === product.id)
       if (existing) {
@@ -142,29 +166,26 @@ export default function App() {
     }
   }
 
-  // --- Product Management (Name & Price Only) ---
+  // --- Product Management ---
   function handleSaveProduct() {
     const name = productForm.name.trim()
-    const price = parseFloat(productForm.price)
     const purchasePrice = parseFloat(productForm.purchasePrice)
-
-    if (!name || !price || price <= 0) {
-      return window.alert('Invalid details. Ensure price is greater than 0.')
+    const price = parseFloat(productForm.price)
+    
+    if (!name || isNaN(purchasePrice) || isNaN(price) || purchasePrice < 0 || price <= 0) {
+      return window.alert('Invalid details. Ensure prices are valid numbers greater than 0.')
     }
 
     if (isEditMode) {
-      // Find current stock to preserve it during name/price update
       const existingProduct = products.find(p => p.id === editingProductId)
       const preserveStock = existingProduct ? existingProduct.stock : 0
-
-      productService.updateProduct(editingProductId, name, price, preserveStock, purchasePrice).then(() => {
+      productService.updateProduct(editingProductId, name, purchasePrice, price, preserveStock).then(() => {
         loadProducts()
         closeProductModal()
       })
     } else {
-      // Allow setting initial stock only when creating a brand new product
       const initialStock = parseInt(productForm.stock, 10) || 0
-      productService.addProduct(name, price, initialStock, purchasePrice).then(() => {
+      productService.addProduct(name, purchasePrice, price, initialStock).then(() => {
         loadProducts()
         closeProductModal()
       })
@@ -182,7 +203,7 @@ export default function App() {
     setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
   }
 
-  // --- Inventory Management (Stock Only) ---
+  // --- Inventory Management ---
   function openInventoryModal(product) {
     setEditingInventoryId(product.id)
     setInventoryForm({ stock: product.stock.toString() })
@@ -200,12 +221,10 @@ export default function App() {
     if (isNaN(newStock) || newStock < 0) {
       return window.alert('Stock must be 0 or greater.')
     }
-
     const product = products.find(p => p.id === editingInventoryId)
     if (!product) return
 
-    // Preserve the existing name and price, ONLY update the stock
-    productService.updateProduct(product.id, product.name, product.price, newStock)
+    productService.updateProduct(product.id, product.name, product.purchasePrice, product.price, newStock)
       .then(() => {
         loadProducts()
         closeInventoryModal()
@@ -213,15 +232,14 @@ export default function App() {
       .catch(() => window.alert('Failed to update inventory.'))
   }
 
-  // --- Customer Management Functions ---
+  // --- Customer Management ---
   function handleSaveCustomer() {
-    const name = customerForm.name.trim()
-    const gstno = customerForm.gstno.trim()
-    const mobile = customerForm.mobile.trim()
-    const city = customerForm.city.trim()
+    const name = customerForm.name?.trim()
+    const gstno = customerForm.gstno?.trim()
+    const mobile = customerForm.mobile?.trim()
+    const city = customerForm.city?.trim()
 
     if (!name) return window.alert('Name is required')
-    
 
     if (isCustomerEditMode) {
       customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city).then(() => {
@@ -249,7 +267,7 @@ export default function App() {
 
   function closeCustomerModal() {
     setShowCustomerModal(false)
-    setCustomerForm({ name: '' , gstno: '', mobile: '', city: '' })
+    setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
   }
 
   function handleViewSalesList() {
@@ -268,7 +286,7 @@ export default function App() {
   return (
     <div className="app-layout">
       
-      {/* 🟢 LEFT SIDEBAR 🟢 */}
+      {/* LEFT SIDEBAR */}
       <aside className="sidebar">
         <div className="sidebar-header">
           Retailer App
@@ -280,7 +298,7 @@ export default function App() {
             onClick={() => setIsSalesMenuOpen(!isSalesMenuOpen)}
           >
             <span>Sales</span>
-            <span>{isSalesMenuOpen ? '▼' : '▶'}</span>
+            <span>{isSalesMenuOpen ? ' ' : ' '}</span>
           </button>
           
           {isSalesMenuOpen && (
@@ -323,7 +341,7 @@ export default function App() {
         </button>
       </aside>
 
-      {/* 🔵 MAIN CONTENT AREA 🔵 */}
+      {/* MAIN CONTENT AREA */}
       <main className="main-content">
         
         {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
@@ -333,26 +351,66 @@ export default function App() {
           <div className="card text-center">
             <h2 className="card-title" style={{ marginBottom: '1.5rem' }}>Start a New Sale</h2>
             <div className="form-container">
-              <label className="form-label">Select Customer:</label>
-              <select 
-                className="form-control"
-                value={activeCustomer ? activeCustomer.id : ''} 
-                onChange={e => {
-                  const cust = customers.find(c => c.id === Number(e.target.value))
-                  setActiveCustomer(cust || null)
-                }}
-              >
-                <option value="">-- Choose Customer --</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>              
+              
+              <label className="form-label">Search & Select Customer:</label>
+              
+              {/* Custom Searchable Dropdown */}
+              <div style={{ position: 'relative', textAlign: 'left' }}>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Type a name to search..." 
+                  value={searchQuery}
+                  onFocus={() => setIsDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)} // slight delay to allow click
+                  onChange={e => {
+                    setSearchQuery(e.target.value)
+                    setIsDropdownOpen(true)
+                    setActiveCustomer(null) // Reset selection if they start typing a new name
+                  }}
+                  style={{ marginBottom: 0 }}
+                />
+                
+                {/* The Floating Dropdown Menu */}
+                {isDropdownOpen && (
+                  <ul style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0,
+                    backgroundColor: 'white', border: '1px solid #cbd5e1', borderTop: 'none',
+                    borderRadius: '0 0 6px 6px', maxHeight: '200px', overflowY: 'auto',
+                    zIndex: 1000, listStyle: 'none', padding: 0, margin: 0,
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                  }}>
+                    {filteredCustomers.length > 0 ? filteredCustomers.map(c => (
+                      <li 
+                        key={c.id}
+                        onMouseDown={() => {
+                          setActiveCustomer(c)
+                          setSearchQuery(c.name)
+                          setIsDropdownOpen(false)
+                        }}
+                        style={{ padding: '0.8rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', color: '#0f172a' }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f1f5f9'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                      >
+                        {c.name}
+                      </li>
+                    )) : (
+                      <li style={{ padding: '0.8rem', color: '#94a3b8' }}>No customers found</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+
+              <p className="help-text" style={{ marginTop: '1rem' }}>
+                Don't see the customer? Go to "Manage Customers" to add them.
+              </p>
             </div>
+            
             <button 
               className="btn btn-success"
               onClick={() => {
                 if (!activeCustomer) {
-                  window.alert('Please select a customer to begin.')
+                  window.alert('Please select a valid customer from the dropdown to begin.')
                   return
                 }
                 setView('list')
@@ -366,9 +424,17 @@ export default function App() {
         {/* 2. SHOPPING LIST */}
         {view === 'list' && (
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
               <h2 className="card-title">Adding items for: <span className="highlight-text">{activeCustomer?.name}</span></h2>
-              <div className="btn-group">
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Search products..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ maxWidth: '250px', marginBottom: 0, flex: 1 }}
+              />
+              <div className="btn-group" style={{ marginLeft: 'auto' }}>
                 <button className="btn btn-warning" onClick={() => setView('cart')}>
                   View Cart ({cart.length})
                 </button>
@@ -379,7 +445,7 @@ export default function App() {
             </div>
 
             <ul className="product-grid">
-              {products.map(product => {
+              {filteredProducts.map(product => {
                 const isOutOfStock = product.stock <= 0;
                 return (
                   <li key={product.id} className="product-card" style={{ opacity: isOutOfStock ? 0.6 : 1 }}>
@@ -401,6 +467,9 @@ export default function App() {
                   </li>
                 )
               })}
+              {filteredProducts.length === 0 && (
+                <div className="empty-state" style={{ gridColumn: '1 / -1' }}>No products found.</div>
+              )}
             </ul>
           </div>
         )}
@@ -411,7 +480,7 @@ export default function App() {
             <div className="card-header">
               <h2 className="card-title">Current Cart - {activeCustomer?.name}</h2>
               <button className="btn btn-secondary" onClick={() => setView('list')}>
-                ← Back to Products
+                  Back to Products
               </button>
             </div>
             
@@ -452,7 +521,7 @@ export default function App() {
             <div className="cart-summary">
               <h3 className="grand-total">Total: <span className="price-text">{cartTotal} rs</span></h3>
               <button className="btn btn-success" onClick={submitCart}>
-                Complete Sale ✓
+                Complete Sale 
               </button>
             </div>
           </div>
@@ -461,8 +530,16 @@ export default function App() {
         {/* 4. SALES LIST */}
         {view === 'invoices' && (
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
               <h2 className="card-title">Sales List</h2>
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Search by Bill ID or Customer..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+              />
             </div>
             <div className="table-responsive">
               <table className="data-table">
@@ -476,7 +553,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.length ? invoices.map(invoice => (
+                  {filteredInvoices.length ? filteredInvoices.map(invoice => (
                     <tr key={invoice.id}>
                       <td>#{invoice.id}</td>
                       <td>{invoice.customerName}</td>
@@ -500,6 +577,7 @@ export default function App() {
                   <div><strong>Date:</strong> {new Date(selectedInvoice.orderDate).toLocaleString()}</div>
                   <div className="price-text" style={{ fontSize: '1.2rem' }}><strong>Total: {selectedInvoice.totalAmount} rs</strong></div>
                 </div>
+
                 <h4>Items Purchased</h4>
                 <div className="table-responsive">
                   <table className="data-table">
@@ -524,11 +602,19 @@ export default function App() {
           </div>
         )}
 
-        {/* 5. INVENTORY MANAGEMENT (NEW) */}
+        {/* 5. INVENTORY MANAGEMENT */}
         {view === 'inventory' && (
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
               <h2 className="card-title">Inventory</h2>
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Search products..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+              />
             </div>
             <div className="table-responsive">
               <table className="data-table">
@@ -541,7 +627,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((product, index) => (
+                  {filteredProducts.length ? filteredProducts.map((product, index) => (
                     <tr key={product.id}>
                       <td>{index + 1}</td>
                       <td>{product.name}</td>
@@ -554,7 +640,7 @@ export default function App() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  )) : <tr><td colSpan={4} className="empty-state">No products found.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -564,8 +650,16 @@ export default function App() {
         {/* 6. MANAGE CUSTOMERS */}
         {view === 'customers-manage' && (
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
               <h2 className="card-title">Customer Management</h2>
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Search name, phone, GST, city..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ maxWidth: '250px', marginBottom: 0, marginLeft: 'auto' }}
+              />
               <button className="btn btn-primary" onClick={() => {
                 setIsCustomerEditMode(false)
                 setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
@@ -587,7 +681,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map((c, index) => (
+                  {filteredCustomers.length ? filteredCustomers.map((c, index) => (
                     <tr key={c.id}>
                       <td>{index + 1}</td>
                       <td>{c.name}</td>
@@ -599,14 +693,19 @@ export default function App() {
                           <button className="btn btn-warning" onClick={() => {
                             setIsCustomerEditMode(true)
                             setEditingCustomerId(c.id)
-                            setCustomerForm({ name: c.name, gstno: c.gstno || '', mobile: c.mobile || '', city: c.city || '' })
+                            setCustomerForm({ 
+                              name: c.name, 
+                              gstno: c.gstno || '', 
+                              mobile: c.mobile || '', 
+                              city: c.city || '' 
+                            })
                             setShowCustomerModal(true)
                           }}>Edit</button>
                           <button className="btn btn-danger" onClick={() => handleDeleteCustomer(c.id, c.name)}>Delete</button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )) : <tr><td colSpan={6} className="empty-state">No customers found.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -616,8 +715,16 @@ export default function App() {
         {/* 7. MANAGE PRODUCTS */}
         {view === 'products' && (
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
               <h2 className="card-title">Product Details</h2>
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Search products..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+              />
               <button className="btn btn-primary" onClick={() => {
                 setIsEditMode(false)
                 setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
@@ -633,12 +740,12 @@ export default function App() {
                     <th>#</th>
                     <th>Product Name</th>
                     <th>Purchase Price (rs)</th>
-                    <th>Price (rs)</th>
+                    <th>Selling Price (rs)</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((product, index) => (
+                  {filteredProducts.length ? filteredProducts.map((product, index) => (
                     <tr key={product.id}>
                       <td>{index + 1}</td>
                       <td>{product.name}</td>
@@ -651,21 +758,23 @@ export default function App() {
                             setEditingProductId(product.id)
                             setProductForm({ 
                               name: product.name, 
-                              purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0', 
-                              price: product.price.toString()
-                             })
+                              purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0',
+                              price: product.price.toString(),
+                              stock: product.stock.toString()
+                            })
                             setShowProductModal(true)
                           }}>Edit Details</button>
                           <button className="btn btn-danger" onClick={() => handleDeleteProduct(product.id, product.name)}>Delete</button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )) : <tr><td colSpan={5} className="empty-state">No products found.</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
         )}
+
       </main>
 
       {/* --- MODALS --- */}
@@ -752,18 +861,16 @@ export default function App() {
         <div className="modal-overlay">
           <div className="modal-content">
             <h3 style={{ marginTop: 0 }}>{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
-            
             <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">Customer Name:</label>
-              <input
-                type="text"
+              <input 
+                type="text" 
                 className="form-control"
-                value={customerForm.name}
-                onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })}
+                value={customerForm.name} 
+                onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })} 
                 placeholder="Enter customer name"
               />
             </div>
-
             <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">GST No:</label>
               <input
@@ -774,7 +881,6 @@ export default function App() {
                 placeholder="Enter GST Number"
               />
             </div>
-
             <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">Mobile:</label>
               <input
@@ -785,7 +891,6 @@ export default function App() {
                 placeholder="Enter Mobile Number"
               />
             </div>
-
             <div style={{ marginBottom: '1rem' }}>
               <label className="form-label">City:</label>
               <input
@@ -796,7 +901,6 @@ export default function App() {
                 placeholder="Enter City"
               />
             </div>
-
             <div className="modal-actions">
               <button onClick={closeCustomerModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveCustomer} className="btn btn-success">Save</button>

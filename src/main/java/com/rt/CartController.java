@@ -47,8 +47,8 @@ public class CartController {
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
         return productRepository.findById(id)
                 .map(product -> {
-                    // FIXED: Added null checks. 
-                    // Now, it only updates the field if the frontend actually sent it!
+                     
+                    // it only updates the field if the frontend actually sent it
                     if (productDetails.getName() != null) {
                         product.setName(productDetails.getName());
                     }

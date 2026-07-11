@@ -2,49 +2,56 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { productService, invoiceService, customerService } from './services/api'
 
-const DEFAULT_PRODUCTS = [
-  { id: '1', name: 'VESTS', purchasePrice: 100, price: 120, stock: 50 },
-  { id: '2', name: 'BRIEF', purchasePrice: 250, price: 320, stock: 30 },
-  { id: '3', name: 'SHIRT', purchasePrice: 600, price: 850, stock: 15 },
-]
-
 export default function App() {
-  const [view, setView] = useState('customer')
+  const [view, setView] = useState('list') 
   const [products, setProducts] = useState([])
   const [invoices, setInvoices] = useState([])
   const [customers, setCustomers] = useState([])
   const [isSalesMenuOpen, setIsSalesMenuOpen] = useState(true)
   const [activeCustomer, setActiveCustomer] = useState(null)
   
-  // Search State
+  // --- Search & Pagination State ---
   const [searchQuery, setSearchQuery] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('') 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(20)
 
+  // --- Cart & Billing State ---
+  const [discountPercent, setDiscountPercent] = useState(0)
   const [cart, setCart] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('cart')) || []
-    } catch {
-      return []
+    try { 
+      return JSON.parse(localStorage.getItem('cart')) || [] 
+    } catch { 
+      return [] 
     }
   })
   const [error, setError] = useState('')
 
-  // Product Modal States
+  // --- Modals State ---
   const [showProductModal, setShowProductModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
-  const [productForm, setProductForm] = useState({ name: '', purchasePrice: '', price: '', stock: '' })
+  const [productForm, setProductForm] = useState({ 
+    name: '', 
+    purchasePrice: '', 
+    price: '', 
+    stock: '' 
+  })
 
-  // Inventory Modal States
   const [showInventoryModal, setShowInventoryModal] = useState(false)
   const [editingInventoryId, setEditingInventoryId] = useState(null)
   const [inventoryForm, setInventoryForm] = useState({ stock: '' })
 
-  // Customer Modal States
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [isCustomerEditMode, setIsCustomerEditMode] = useState(false)
   const [editingCustomerId, setEditingCustomerId] = useState(null)
-  const [customerForm, setCustomerForm] = useState({ name: '', gstno: '', mobile: '', city: '' })
+  const [customerForm, setCustomerForm] = useState({ 
+    name: '', 
+    gstno: '', 
+    mobile: '', 
+    city: '' 
+  })
 
   const [selectedInvoice, setSelectedInvoice] = useState(null)
 
@@ -57,21 +64,38 @@ export default function App() {
     localStorage.setItem('cart', JSON.stringify(cart))
   }, [cart])
 
-  // Clear search bar whenever switching screens
   useEffect(() => {
     setSearchQuery('')
+    setCurrentPage(1)
   }, [view])
 
-  const cartTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [cart]
-  )
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, itemsPerPage])
 
-  // --- Search Filtering Logic ---
+  // --- Advanced Billing Math ---
+  const billingDetails = useMemo(() => {
+    const grossTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const discountAmount = grossTotal * (discountPercent / 100)
+    const taxableAmount = grossTotal - discountAmount
+    const cgst = taxableAmount * 0.025
+    const sgst = taxableAmount * 0.025
+    const finalTotal = taxableAmount + cgst + sgst
+
+    return { 
+      grossTotal, 
+      discountAmount, 
+      cgst, 
+      sgst, 
+      finalTotal 
+    }
+  }, [cart, discountPercent])
+
+  // --- Filtering Logic ---
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
-  
+
   const filteredCustomers = customers.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (c.mobile && c.mobile.includes(searchQuery)) ||
@@ -79,41 +103,94 @@ export default function App() {
     (c.gstno && c.gstno.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
+  const dropdownFilteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(customerSearch.toLowerCase())
+  )
+
   const filteredInvoices = invoices.filter(i => 
-    i.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
     i.id.toString().includes(searchQuery)
   )
 
-  function loadProducts() {
-    productService.getProducts()
-      .then(data => setProducts(Array.isArray(data) ? data : DEFAULT_PRODUCTS))
-      .catch(() => {
-        setError('Unable to load products. Showing sample data.')
-        setProducts(DEFAULT_PRODUCTS)
-      })
+  // --- Pagination Logic ---
+  const indexOfLastItem = currentPage * itemsPerPage
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage
+
+  const paginatedProducts = filteredProducts.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedCustomers = filteredCustomers.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedInvoices = filteredInvoices.slice(indexOfFirstItem, indexOfLastItem)
+
+  function renderPagination(totalItems) {
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1
+    return (
+      <div className="pagination-wrapper">
+        <div>
+          <label className="fw-bold" style={{ marginRight: '0.5rem' }}>
+            Rows per page:
+          </label>
+          <select 
+            className="form-control mb-0" 
+            style={{ width: 'auto', display: 'inline-block', padding: '0.3rem' }} 
+            value={itemsPerPage} 
+            onChange={e => setItemsPerPage(Number(e.target.value))}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={40}>40</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+        <div className="pagination-info">
+          <span className="pagination-text">
+            Showing {totalItems === 0 ? 0 : indexOfFirstItem + 1} - {Math.min(indexOfLastItem, totalItems)} of {totalItems}
+          </span>
+          <div className="btn-group">
+            <button 
+              className="btn btn-secondary" 
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(p => p - 1)}
+            >
+              Prev
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              disabled={currentPage >= totalPages} 
+              onClick={() => setCurrentPage(p => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
-  function loadCustomers() {
-    customerService.getCustomers()
-      .then(data => setCustomers(Array.isArray(data) ? data : []))
-      .catch(err => console.error("Failed to load customers:", err))
+  // --- API Loaders & Cart Functions ---
+  function loadProducts() { 
+    productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])) 
   }
 
-  // --- Cart & Sale Functions ---
+  function loadCustomers() { 
+    customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])) 
+  }
+
   function addToCart(product) {
     if (product.stock <= 0) {
-      window.alert(`Sorry, ${product.name} is currently out of stock!`)
-      return
+      return window.alert(`Sorry, ${product.name} is currently out of stock!`)
     }
+    
     setCart(current => {
       const existing = current.find(item => item.id === product.id)
+      
       if (existing) {
         if (existing.quantity >= product.stock) {
           window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`)
           return current
         }
-        return current.map(item =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        return current.map(item => 
+          item.id === product.id 
+            ? { ...item, quantity: item.quantity + 1 } 
+            : item
         )
       }
       return [...current, { ...product, quantity: 1 }]
@@ -122,98 +199,120 @@ export default function App() {
 
   function updateQuantity(index, quantity) {
     if (quantity < 1) return
+    
     setCart(current => {
       const item = current[index]
       if (quantity > item.stock) {
         window.alert(`Cannot exceed available inventory (${item.stock} left).`)
         return current
       }
-      return current.map((itm, idx) => idx === index ? { ...itm, quantity } : itm)
+      return current.map((itm, idx) => 
+        idx === index 
+          ? { ...itm, quantity } 
+          : itm
+      )
     })
   }
 
-  function removeCartItem(index) {
-    setCart(current => current.filter((_, idx) => idx !== index))
+  function removeCartItem(index) { 
+    setCart(current => current.filter((_, idx) => idx !== index)) 
   }
 
   function submitCart() {
     if (!cart.length) {
-      window.alert('Cart is empty.')
-      return
+      return window.alert('Cart is empty.')
     }
     if (!activeCustomer) {
-      window.alert('No customer selected.')
-      setView('customer')
-      return
+      return window.alert('Please select a customer from the top dropdown before completing the sale.')
     }
 
-    invoiceService.create(activeCustomer.name, cart)
+    invoiceService.create(
+      activeCustomer.name, 
+      cart, 
+      billingDetails.grossTotal, 
+      discountPercent, 
+      billingDetails.cgst, 
+      billingDetails.sgst, 
+      billingDetails.finalTotal
+    )
       .then(invoice => {
-        window.alert(`Sale #${invoice.id} completed successfully for ${invoice.customerName}!`)
+        window.alert(`Sale #${invoice.id} completed successfully!`)
         setCart([])
         setActiveCustomer(null)
-        setView('customer')
+        setCustomerSearch('')
+        setDiscountPercent(0)
+        setView('list')
         loadProducts() 
       })
       .catch((err) => window.alert('Failed to complete sale. ' + err.message))
   }
 
   function cancelSale() {
-    if (window.confirm("Are you sure you want to cancel the current sale? All items in the cart will be removed.")) {
+    if (window.confirm("Are you sure you want to cancel the current sale?")) {
       setCart([])
       setActiveCustomer(null)
-      setView('customer')
+      setCustomerSearch('')
+      setDiscountPercent(0)
+      setView('list')
     }
   }
 
-  // --- Product Management ---
+  // --- CRUD Functions ---
   function handleSaveProduct() {
     const name = productForm.name.trim()
     const purchasePrice = parseFloat(productForm.purchasePrice)
     const price = parseFloat(productForm.price)
     
     if (!name || isNaN(purchasePrice) || isNaN(price) || purchasePrice < 0 || price <= 0) {
-      return window.alert('Invalid details. Ensure prices are valid numbers greater than 0.')
+      return window.alert('Invalid details.')
     }
 
     if (isEditMode) {
       const existingProduct = products.find(p => p.id === editingProductId)
-      const preserveStock = existingProduct ? existingProduct.stock : 0
-      productService.updateProduct(editingProductId, name, purchasePrice, price, preserveStock).then(() => {
+      productService.updateProduct(
+        editingProductId, 
+        name, 
+        purchasePrice, 
+        price, 
+        existingProduct ? existingProduct.stock : 0
+      ).then(() => { 
         loadProducts()
-        closeProductModal()
+        closeProductModal() 
       })
     } else {
-      const initialStock = parseInt(productForm.stock, 10) || 0
-      productService.addProduct(name, purchasePrice, price, initialStock).then(() => {
+      productService.addProduct(
+        name, 
+        purchasePrice, 
+        price, 
+        parseInt(productForm.stock, 10) || 0
+      ).then(() => { 
         loadProducts()
-        closeProductModal()
+        closeProductModal() 
       })
     }
   }
 
-  function handleDeleteProduct(id, name) {
+  function handleDeleteProduct(id, name) { 
     if (window.confirm(`Delete "${name}"?`)) {
-      productService.deleteProduct(id).then(loadProducts)
+      productService.deleteProduct(id).then(loadProducts) 
     }
   }
 
-  function closeProductModal() {
+  function closeProductModal() { 
     setShowProductModal(false)
-    setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
+    setProductForm({ name: '', purchasePrice: '', price: '', stock: '' }) 
   }
 
-  // --- Inventory Management ---
-  function openInventoryModal(product) {
+  function openInventoryModal(product) { 
     setEditingInventoryId(product.id)
     setInventoryForm({ stock: product.stock.toString() })
-    setShowInventoryModal(true)
+    setShowInventoryModal(true) 
   }
 
-  function closeInventoryModal() {
+  function closeInventoryModal() { 
     setShowInventoryModal(false)
     setEditingInventoryId(null)
-    setInventoryForm({ stock: '' })
+    setInventoryForm({ stock: '' }) 
   }
 
   function handleSaveInventory() {
@@ -221,72 +320,69 @@ export default function App() {
     if (isNaN(newStock) || newStock < 0) {
       return window.alert('Stock must be 0 or greater.')
     }
+    
     const product = products.find(p => p.id === editingInventoryId)
-    if (!product) return
-
-    productService.updateProduct(product.id, product.name, product.purchasePrice, product.price, newStock)
-      .then(() => {
-        loadProducts()
-        closeInventoryModal()
-      })
-      .catch(() => window.alert('Failed to update inventory.'))
+    productService.updateProduct(
+      product.id, 
+      product.name, 
+      product.purchasePrice, 
+      product.price, 
+      newStock
+    ).then(() => { 
+      loadProducts()
+      closeInventoryModal() 
+    })
   }
 
-  // --- Customer Management ---
   function handleSaveCustomer() {
-    const name = customerForm.name?.trim()
-    const gstno = customerForm.gstno?.trim()
-    const mobile = customerForm.mobile?.trim()
-    const city = customerForm.city?.trim()
-
-    if (!name) return window.alert('Name is required')
-
-    if (isCustomerEditMode) {
-      customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city).then(() => {
-        loadCustomers()
-        closeCustomerModal()
-      })
-    } else {
-      customerService.addCustomer(name, gstno, mobile, city).then(() => {
-        loadCustomers()
-        closeCustomerModal()
-      })
+    const { name, gstno, mobile, city } = customerForm
+    if (!name?.trim()) {
+      return window.alert('Name is required')
     }
+
+    const action = isCustomerEditMode 
+      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city) 
+      : customerService.addCustomer(name, gstno, mobile, city)
+      
+    action.then(() => { 
+      loadCustomers()
+      closeCustomerModal() 
+    })
   }
 
   function handleDeleteCustomer(id, name) {
     if (window.confirm(`Delete customer "${name}"?`)) {
       customerService.deleteCustomer(id).then(() => {
         loadCustomers()
-        if (activeCustomer && activeCustomer.id === id) {
+        if (activeCustomer?.id === id) { 
           setActiveCustomer(null)
+          setCustomerSearch('') 
         }
       })
     }
   }
 
-  function closeCustomerModal() {
+  function closeCustomerModal() { 
     setShowCustomerModal(false)
-    setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
+    setCustomerForm({ name: '', gstno: '', mobile: '', city: '' }) 
   }
 
   function handleViewSalesList() {
     invoiceService.getInvoices().then(data => {
-      setInvoices(data || [])
+      const sortedInvoices = (data || []).sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))
+      setInvoices(sortedInvoices)
       setView('invoices')
     })
   }
 
-  function handleViewInvoiceDetails(invoiceId) {
-    invoiceService.getInvoiceById(invoiceId).then(data => {
-      setSelectedInvoice(data)
-    })
+  function handleViewInvoiceDetails(invoiceId) { 
+    invoiceService.getInvoiceById(invoiceId).then(data => setSelectedInvoice(data)) 
   }
 
   return (
     <div className="app-layout">
       
-      {/* LEFT SIDEBAR */}
+      {/* SIDEBAR NAVIGATION */}
       <aside className="sidebar">
         <div className="sidebar-header">
           Retailer App
@@ -294,7 +390,7 @@ export default function App() {
         
         <div className="menu-group">
           <button 
-            className="menu-btn"
+            className="menu-btn" 
             onClick={() => setIsSalesMenuOpen(!isSalesMenuOpen)}
           >
             <span>Sales</span>
@@ -304,13 +400,13 @@ export default function App() {
           {isSalesMenuOpen && (
             <div>
               <button 
-                className={`submenu-btn ${['customer', 'list', 'cart'].includes(view) ? 'active' : ''}`}
-                onClick={() => setView('customer')}
+                className={`submenu-btn ${['list', 'cart'].includes(view) ? 'active' : ''}`} 
+                onClick={() => setView('list')}
               >
                 New Sales
               </button>
               <button 
-                className={`submenu-btn ${view === 'invoices' ? 'active' : ''}`}
+                className={`submenu-btn ${view === 'invoices' ? 'active' : ''}`} 
                 onClick={handleViewSalesList}
               >
                 Sales List
@@ -318,23 +414,21 @@ export default function App() {
             </div>
           )}
         </div>
-
+        
         <button 
-          className={`menu-btn ${view === 'inventory' ? 'active' : ''}`}
+          className={`menu-btn ${view === 'inventory' ? 'active' : ''}`} 
           onClick={() => setView('inventory')}
         >
           Inventory
         </button>
-
         <button 
-          className={`menu-btn ${view === 'customers-manage' ? 'active' : ''}`}
+          className={`menu-btn ${view === 'customers-manage' ? 'active' : ''}`} 
           onClick={() => setView('customers-manage')}
         >
           Manage Customers
         </button>
-
         <button 
-          className={`menu-btn ${view === 'products' ? 'active' : ''}`}
+          className={`menu-btn ${view === 'products' ? 'active' : ''}`} 
           onClick={() => setView('products')}
         >
           Manage Products
@@ -344,143 +438,148 @@ export default function App() {
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
         
-        {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
-
-        {/* 1. SELECT CUSTOMER */}
-        {view === 'customer' && (
-          <div className="card text-center">
-            <h2 className="card-title" style={{ marginBottom: '1.5rem' }}>Start a New Sale</h2>
-            <div className="form-container">
-              
-              <label className="form-label">Search & Select Customer:</label>
-              
-              {/* Custom Searchable Dropdown */}
-              <div style={{ position: 'relative', textAlign: 'left' }}>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  placeholder="Type a name to search..." 
-                  value={searchQuery}
-                  onFocus={() => setIsDropdownOpen(true)}
-                  onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)} // slight delay to allow click
-                  onChange={e => {
-                    setSearchQuery(e.target.value)
-                    setIsDropdownOpen(true)
-                    setActiveCustomer(null) // Reset selection if they start typing a new name
-                  }}
-                  style={{ marginBottom: 0 }}
-                />
-                
-                {/* The Floating Dropdown Menu */}
-                {isDropdownOpen && (
-                  <ul style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0,
-                    backgroundColor: 'white', border: '1px solid #cbd5e1', borderTop: 'none',
-                    borderRadius: '0 0 6px 6px', maxHeight: '200px', overflowY: 'auto',
-                    zIndex: 1000, listStyle: 'none', padding: 0, margin: 0,
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                  }}>
-                    {filteredCustomers.length > 0 ? filteredCustomers.map(c => (
-                      <li 
-                        key={c.id}
-                        onMouseDown={() => {
-                          setActiveCustomer(c)
-                          setSearchQuery(c.name)
-                          setIsDropdownOpen(false)
-                        }}
-                        style={{ padding: '0.8rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', color: '#0f172a' }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f1f5f9'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                      >
-                        {c.name}
-                      </li>
-                    )) : (
-                      <li style={{ padding: '0.8rem', color: '#94a3b8' }}>No customers found</li>
-                    )}
-                  </ul>
-                )}
-              </div>
-
-              <p className="help-text" style={{ marginTop: '1rem' }}>
-                Don't see the customer? Go to "Manage Customers" to add them.
-              </p>
-            </div>
-            
-            <button 
-              className="btn btn-success"
-              onClick={() => {
-                if (!activeCustomer) {
-                  window.alert('Please select a valid customer from the dropdown to begin.')
-                  return
-                }
-                setView('list')
-              }}
-            >
-              Proceed to Products
-            </button>
-          </div>
+        {error && (
+          <div className="text-danger mb-0">{error}</div>
         )}
 
-        {/* 2. SHOPPING LIST */}
+        {/* =========================================
+            VIEW 1: COMBINED SHOPPING LIST
+            ========================================= */}
         {view === 'list' && (
-          <div className="card">
-            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-              <h2 className="card-title">Adding items for: <span className="highlight-text">{activeCustomer?.name}</span></h2>
-              <input 
-                type="text" 
-                className="form-control" 
-                placeholder="Search products..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ maxWidth: '250px', marginBottom: 0, flex: 1 }}
-              />
-              <div className="btn-group" style={{ marginLeft: 'auto' }}>
-                <button className="btn btn-warning" onClick={() => setView('cart')}>
-                  View Cart ({cart.length})
-                </button>
-                <button className="btn btn-danger" onClick={cancelSale}>
-                  Cancel Sale
-                </button>
+          <div>
+            {/* Control Panel (Customer & Product Search) */}
+            <div className="sales-control-panel">
+              <div className="sales-control-row">
+                
+                {/* Customer Input Group */}
+                <div className="input-group" style={{ flex: 'none', width: '250px' }}>
+                  <label>Select Customer</label>
+                  <div className="dropdown-container">
+                    <input 
+                      type="text" 
+                      className={`form-control mb-0 ${!activeCustomer ? 'customer-input-warning' : ''}`}
+                      placeholder="Search or select customer..." 
+                      value={customerSearch} 
+                      onFocus={() => setIsDropdownOpen(true)} 
+                      onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                      onChange={e => { 
+                        setCustomerSearch(e.target.value)
+                        setIsDropdownOpen(true)
+                        setActiveCustomer(null) 
+                      }}
+                    />
+                    {isDropdownOpen && (
+                      <ul className="dropdown-menu">
+                        {dropdownFilteredCustomers.length > 0 ? dropdownFilteredCustomers.map(c => (
+                          <li 
+                            key={c.id} 
+                            className="dropdown-item" 
+                            onMouseDown={() => { 
+                              setActiveCustomer(c)
+                              setCustomerSearch(c.name)
+                              setIsDropdownOpen(false) 
+                            }}
+                          >
+                            {c.name}
+                          </li>
+                        )) : (
+                          <li className="dropdown-empty">No customers found</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                {/* Product Search Group */}
+                <div className="input-group">
+                  <label>Search Products</label>
+                  <input 
+                    type="text" 
+                    className="form-control mb-0" 
+                    placeholder="Search by product name..." 
+                    value={searchQuery} 
+                    onChange={e => setSearchQuery(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div className="sales-control-row">
+                <div className="action-buttons-right">
+                  <button className="btn btn-danger" onClick={cancelSale}>
+                    Cancel Sale
+                  </button>
+                  <button className="btn btn-warning" onClick={() => setView('cart')}>
+                    View Cart ({cart.reduce((total, item) => total + item.quantity, 0)})
+                  </button>
+                </div>
               </div>
             </div>
 
-            <ul className="product-grid">
-              {filteredProducts.map(product => {
-                const isOutOfStock = product.stock <= 0;
-                return (
-                  <li key={product.id} className="product-card" style={{ opacity: isOutOfStock ? 0.6 : 1 }}>
-                    <div className="product-info">
-                      <div className="product-name">{product.name}</div>
-                      <div className="price-text">{product.price} rs</div>
-                      <div style={{ fontSize: '0.9rem', marginTop: '5px', color: isOutOfStock ? '#ef4444' : '#64748b', fontWeight: 'bold' }}>
-                        {isOutOfStock ? 'Out of Stock' : `In Stock: ${product.stock}`}
-                      </div>
-                    </div>
-                    <button 
-                      className={isOutOfStock ? "btn btn-secondary" : "btn btn-primary"} 
-                      style={{ width: '100%', cursor: isOutOfStock ? 'not-allowed' : 'pointer' }} 
-                      onClick={() => addToCart(product)}
-                      disabled={isOutOfStock}
-                    >
-                      {isOutOfStock ? 'Out of Stock' : 'Add Item'}
-                    </button>
-                  </li>
-                )
-              })}
-              {filteredProducts.length === 0 && (
-                <div className="empty-state" style={{ gridColumn: '1 / -1' }}>No products found.</div>
-              )}
-            </ul>
+            {/* Product Blocks Table */}
+            <div className="table-responsive">
+              <table className="block-table">
+                <thead>
+                  <tr>
+                    <th className="col-product-name">Product Name</th>
+                    <th>Selling Price</th>
+                    <th>Available Stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.map(product => {
+                    const cartItem = cart.find(c => c.id === product.id)
+                    const inCartQty = cartItem ? cartItem.quantity : 0
+                    const availableStock = product.stock - inCartQty
+                    const isOutOfStock = availableStock <= 0
+
+                    return (
+                      <tr 
+                        key={product.id} 
+                        className={`product-row ${isOutOfStock ? 'out-of-stock' : 'available'}`}
+                        onClick={() => { 
+                          if (!isOutOfStock) addToCart(product) 
+                        }}
+                        title={isOutOfStock ? 'Out of stock' : 'Click block to add to cart'}
+                      >
+                        <td className="col-product-name cell-padded">
+                          {product.name}
+                        </td>
+                        <td className="price-text cell-padded">
+                          {product.price} rs
+                        </td>
+                        <td className={`fw-bold cell-padded ${isOutOfStock ? 'text-danger' : 'text-success'}`}>
+                          {isOutOfStock ? 'Out of Stock' : `${availableStock} Units`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        {/* 3. SHOPPING CART */}
+        {/* =========================================
+            VIEW 2: SHOPPING CART
+            ========================================= */}
         {view === 'cart' && (
           <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Current Cart - {activeCustomer?.name}</h2>
-              <button className="btn btn-secondary" onClick={() => setView('list')}>
-                  Back to Products
+            <div className="card-header header-actions">
+              <h2 className="card-title">
+                Cart - {activeCustomer ? activeCustomer.name : <span className="text-danger">No Customer Selected</span>}
+              </h2>
+              <button 
+                className="btn btn-secondary action-buttons-right" 
+                onClick={() => setView('list')}
+              >
+                Back to Products
               </button>
             </div>
             
@@ -498,12 +597,19 @@ export default function App() {
                 <tbody>
                   {cart.length ? cart.map((item, idx) => (
                     <tr key={`${item.id}-${idx}`}>
-                      <td>{item.name} <span style={{fontSize:'0.8rem', color:'#64748b'}}>(Max: {item.stock})</span></td>
+                      <td>
+                        {item.name} 
+                        <span className="text-dark-muted fs-sm"> (Max: {item.stock})</span>
+                      </td>
                       <td>{item.price} rs</td>
                       <td>
                         <input
-                          type="number" className="quantity-input" min="1" max={item.stock} value={item.quantity}
-                          onChange={e => updateQuantity(idx, Number(e.target.value))}
+                          type="number" 
+                          className="quantity-input" 
+                          min="1" 
+                          max={item.stock} 
+                          value={item.quantity} 
+                          onChange={e => updateQuantity(idx, Number(e.target.value))} 
                         />
                       </td>
                       <td className="price-text">{item.price * item.quantity} rs</td>
@@ -513,75 +619,151 @@ export default function App() {
                         </button>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={5} className="empty-state">Cart is empty.</td></tr>}
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">Cart is empty.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
             
-            <div className="cart-summary">
-              <h3 className="grand-total">Total: <span className="price-text">{cartTotal} rs</span></h3>
-              <button className="btn btn-success" onClick={submitCart}>
-                Complete Sale 
-              </button>
+            {/* CLEAN RECEIPT SUMMARY */}
+            <div className="receipt-wrapper">
+              <div className="receipt-panel">
+                <h3 className="receipt-header">Bill Summary</h3>
+                
+                <div className="receipt-row">
+                  <span className="fw-bold">Gross Total:</span>
+                  <span>{billingDetails.grossTotal.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-row">
+                  <span className="fw-bold">Discount (%):</span>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    max="100" 
+                    value={discountPercent} 
+                    onChange={e => setDiscountPercent(Number(e.target.value))} 
+                    className="form-control discount-input" 
+                  />
+                </div>
+
+                {billingDetails.discountAmount > 0 && (
+                  <div className="receipt-row highlight-red">
+                    <span>Discount Applied:</span>
+                    <span>-{billingDetails.discountAmount.toFixed(2)} rs</span>
+                  </div>
+                )}
+                
+                <div className="receipt-row">
+                  <span>CGST (2.5%):</span>
+                  <span>+{billingDetails.cgst.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-row">
+                  <span>SGST (2.5%):</span>
+                  <span>+{billingDetails.sgst.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-total">
+                  <span>Final Total:</span>
+                  <span className="text-success">{billingDetails.finalTotal.toFixed(2)} rs</span>
+                </div>
+
+                <button className="btn btn-success btn-checkout" onClick={submitCart}>
+                  Complete Sale
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* 4. SALES LIST */}
+        {/* =========================================
+            VIEW 3: SALES LIST
+            ========================================= */}
         {view === 'invoices' && (
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-              <h2 className="card-title">Sales List</h2>
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Sales List</h2>
               <input 
                 type="text" 
-                className="form-control" 
+                className="form-control header-search" 
                 placeholder="Search by Bill ID or Customer..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
               />
             </div>
+            
             <div className="table-responsive">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Bill ID</th>
                     <th>Customer Name</th>
-                    <th>Total (rs)</th>
+                    <th>Final Total (rs)</th>
                     <th>Date</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredInvoices.length ? filteredInvoices.map(invoice => (
+                  {paginatedInvoices.length ? paginatedInvoices.map(invoice => (
                     <tr key={invoice.id}>
                       <td>#{invoice.id}</td>
                       <td>{invoice.customerName}</td>
-                      <td className="price-text">{invoice.totalAmount}</td>
+                      <td className="price-text text-success fw-bold">
+                        {invoice.finalTotal || invoice.totalAmount}
+                      </td>
                       <td>{new Date(invoice.orderDate).toLocaleString()}</td>
                       <td>
-                        <button className="btn btn-secondary" onClick={() => handleViewInvoiceDetails(invoice.id)}>View Details</button>
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => handleViewInvoiceDetails(invoice.id)}
+                        >
+                          View Details
+                        </button>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={5} className="empty-state">No sales found.</td></tr>}
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">No sales found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
             
-            {/* Sales Details Modal */}
+            {renderPagination(filteredInvoices.length)}
+
+            {/* Sales Details Modal (Inline) */}
             {selectedInvoice && (
-              <div className="card" style={{ marginTop: '2rem', border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-                <h3 style={{ marginBottom: '1rem' }}>Sale #{selectedInvoice.id} Details</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div><strong>Customer:</strong> {selectedInvoice.customerName}</div>
-                  <div><strong>Date:</strong> {new Date(selectedInvoice.orderDate).toLocaleString()}</div>
-                  <div className="price-text" style={{ fontSize: '1.2rem' }}><strong>Total: {selectedInvoice.totalAmount} rs</strong></div>
+              <div className="card invoice-details-card">
+                <h3 className="modal-header-title">Sale #{selectedInvoice.id} Details</h3>
+                
+                {/* --- VERTICAL INFO BLOCKS FOR CUSTOMER DETAILS --- */}
+                <div className="invoice-summary-grid">
+                  <div className="info-block">
+                    <span className="info-label">Customer</span>
+                    <strong className="info-value">{selectedInvoice.customerName}</strong>
+                  </div>
+                  <div className="info-block">
+                    <span className="info-label">Date & Time</span>
+                    <strong className="info-value">{new Date(selectedInvoice.orderDate).toLocaleString()}</strong>
+                  </div>
                 </div>
 
                 <h4>Items Purchased</h4>
-                <div className="table-responsive">
+                <div className="table-responsive" style={{ marginBottom: '1rem' }}>
                   <table className="data-table">
-                    <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {selectedInvoice.items?.map((item, idx) => (
                         <tr key={idx}>
@@ -594,28 +776,71 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <button onClick={() => setSelectedInvoice(null)} className="btn btn-secondary">Close View</button>
+
+                {/* Vertical Math Details */}
+                <div className="invoice-math-wrapper">
+                  <div className="invoice-math-box">
+                    <div className="receipt-row">
+                      <strong>Gross Total:</strong>
+                      <span>{selectedInvoice.grossTotal || selectedInvoice.totalAmount} rs</span>
+                    </div>
+                    
+                    {selectedInvoice.discountPercent > 0 && (
+                      <div className="receipt-row highlight-red">
+                        <span>Discount ({selectedInvoice.discountPercent}%):</span>
+                        <span>-{ (selectedInvoice.grossTotal * selectedInvoice.discountPercent / 100).toFixed(2) } rs</span>
+                      </div>
+                    )}
+                    
+                    {selectedInvoice.cgst > 0 && (
+                      <div className="receipt-row">
+                        <span>CGST (2.5%):</span>
+                        <span>+{selectedInvoice.cgst} rs</span>
+                      </div>
+                    )}
+                    
+                    {selectedInvoice.sgst > 0 && (
+                      <div className="receipt-row">
+                        <span>SGST (2.5%):</span>
+                        <span>+{selectedInvoice.sgst} rs</span>
+                      </div>
+                    )}
+                    
+                    <div className="receipt-total">
+                      <span>Final Total:</span>
+                      <span className="text-success">{selectedInvoice.finalTotal || selectedInvoice.totalAmount} rs</span>
+                    </div>
+                  </div>
                 </div>
+                
+                <button 
+                  onClick={() => setSelectedInvoice(null)} 
+                  className="btn btn-secondary" 
+                  style={{ marginTop: '1.5rem' }}
+                >
+                  Close View
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* 5. INVENTORY MANAGEMENT */}
+        {/* =========================================
+            VIEW 4: INVENTORY MANAGEMENT
+            ========================================= */}
         {view === 'inventory' && (
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-              <h2 className="card-title">Inventory</h2>
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Inventory</h2>
               <input 
                 type="text" 
-                className="form-control" 
+                className="form-control header-search" 
                 placeholder="Search products..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
               />
             </div>
+            
             <div className="table-responsive">
               <table className="data-table">
                 <thead>
@@ -627,47 +852,61 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.length ? filteredProducts.map((product, index) => (
+                  {paginatedProducts.length ? paginatedProducts.map((product, index) => (
                     <tr key={product.id}>
-                      <td>{index + 1}</td>
+                      <td>{indexOfFirstItem + index + 1}</td>
                       <td>{product.name}</td>
-                      <td style={{ fontWeight: 'bold', fontSize: '1.1rem', color: product.stock > 10 ? '#10b981' : (product.stock > 0 ? '#f59e0b' : '#ef4444') }}>
+                      <td className={`fw-bold fs-lg ${product.stock > 10 ? 'text-success' : (product.stock > 0 ? 'text-warning' : 'text-danger')}`}>
                         {product.stock} {product.stock <= 0 && '(Out of Stock)'}
                       </td>
                       <td>
-                        <button className="btn btn-warning" onClick={() => openInventoryModal(product)}>
+                        <button 
+                          className="btn btn-warning" 
+                          onClick={() => openInventoryModal(product)}
+                        >
                           Update Stock
                         </button>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={4} className="empty-state">No products found.</td></tr>}
+                  )) : (
+                    <tr>
+                      <td colSpan={4} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+            
+            {renderPagination(filteredProducts.length)}
           </div>
         )}
 
-        {/* 6. MANAGE CUSTOMERS */}
+        {/* =========================================
+            VIEW 5: MANAGE CUSTOMERS
+            ========================================= */}
         {view === 'customers-manage' && (
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-              <h2 className="card-title">Customer Management</h2>
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Customer Management</h2>
               <input 
                 type="text" 
-                className="form-control" 
+                className="form-control header-search search-expanded" 
                 placeholder="Search name, phone, GST, city..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ maxWidth: '250px', marginBottom: 0, marginLeft: 'auto' }}
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
               />
-              <button className="btn btn-primary" onClick={() => {
-                setIsCustomerEditMode(false)
-                setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
-                setShowCustomerModal(true)
-              }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => { 
+                  setIsCustomerEditMode(false)
+                  setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
+                  setShowCustomerModal(true) 
+                }}
+              >
                 + Add New Customer
               </button>
             </div>
+            
             <div className="table-responsive">
               <table className="data-table">
                 <thead>
@@ -681,58 +920,79 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCustomers.length ? filteredCustomers.map((c, index) => (
+                  {paginatedCustomers.length ? paginatedCustomers.map((c, index) => (
                     <tr key={c.id}>
-                      <td>{index + 1}</td>
+                      <td>{indexOfFirstItem + index + 1}</td>
                       <td>{c.name}</td>
                       <td>{c.gstno}</td>
                       <td>{c.mobile}</td>
                       <td>{c.city}</td>
                       <td>
                         <div className="btn-group">
-                          <button className="btn btn-warning" onClick={() => {
-                            setIsCustomerEditMode(true)
-                            setEditingCustomerId(c.id)
-                            setCustomerForm({ 
-                              name: c.name, 
-                              gstno: c.gstno || '', 
-                              mobile: c.mobile || '', 
-                              city: c.city || '' 
-                            })
-                            setShowCustomerModal(true)
-                          }}>Edit</button>
-                          <button className="btn btn-danger" onClick={() => handleDeleteCustomer(c.id, c.name)}>Delete</button>
+                          <button 
+                            className="btn btn-warning" 
+                            onClick={() => { 
+                              setIsCustomerEditMode(true)
+                              setEditingCustomerId(c.id)
+                              setCustomerForm({ 
+                                name: c.name, 
+                                gstno: c.gstno || '', 
+                                mobile: c.mobile || '', 
+                                city: c.city || '' 
+                              })
+                              setShowCustomerModal(true) 
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={() => handleDeleteCustomer(c.id, c.name)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={6} className="empty-state">No customers found.</td></tr>}
+                  )) : (
+                    <tr>
+                      <td colSpan={6} className="empty-state">No customers found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+            
+            {renderPagination(filteredCustomers.length)}
           </div>
         )}
 
-        {/* 7. MANAGE PRODUCTS */}
+        {/* =========================================
+            VIEW 6: MANAGE PRODUCTS
+            ========================================= */}
         {view === 'products' && (
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-              <h2 className="card-title">Product Details</h2>
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Product Details</h2>
               <input 
                 type="text" 
-                className="form-control" 
+                className="form-control header-search search-expanded" 
                 placeholder="Search products..." 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ maxWidth: '300px', marginBottom: 0, marginLeft: 'auto' }}
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
               />
-              <button className="btn btn-primary" onClick={() => {
-                setIsEditMode(false)
-                setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
-                setShowProductModal(true)
-              }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => { 
+                  setIsEditMode(false)
+                  setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
+                  setShowProductModal(true) 
+                }}
+              >
                 + Add New Product
               </button>
             </div>
+            
             <div className="table-responsive">
               <table className="data-table">
                 <thead>
@@ -745,58 +1005,77 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.length ? filteredProducts.map((product, index) => (
+                  {paginatedProducts.length ? paginatedProducts.map((product, index) => (
                     <tr key={product.id}>
-                      <td>{index + 1}</td>
+                      <td>{indexOfFirstItem + index + 1}</td>
                       <td>{product.name}</td>
-                      <td className="price-text" style={{color: '#f59e0b'}}>{product.purchasePrice || 0} rs</td>
+                      <td className="price-text text-warning">{product.purchasePrice || 0} rs</td>
                       <td className="price-text">{product.price} rs</td>
                       <td>
                         <div className="btn-group">
-                          <button className="btn btn-warning" onClick={() => {
-                            setIsEditMode(true)
-                            setEditingProductId(product.id)
-                            setProductForm({ 
-                              name: product.name, 
-                              purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0',
-                              price: product.price.toString(),
-                              stock: product.stock.toString()
-                            })
-                            setShowProductModal(true)
-                          }}>Edit Details</button>
-                          <button className="btn btn-danger" onClick={() => handleDeleteProduct(product.id, product.name)}>Delete</button>
+                          <button 
+                            className="btn btn-warning" 
+                            onClick={() => { 
+                              setIsEditMode(true)
+                              setEditingProductId(product.id)
+                              setProductForm({ 
+                                name: product.name, 
+                                purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0', 
+                                price: product.price.toString(), 
+                                stock: product.stock.toString() 
+                              })
+                              setShowProductModal(true) 
+                            }}
+                          >
+                            Edit Details
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={() => handleDeleteProduct(product.id, product.name)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={5} className="empty-state">No products found.</td></tr>}
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+            
+            {renderPagination(filteredProducts.length)}
           </div>
         )}
-
       </main>
 
-      {/* --- MODALS --- */}
+      {/* =========================================
+          GLOBAL MODALS (Popups)
+          ========================================= */}
 
-      {/* INVENTORY UPDATE MODAL */}
+      {/* Inventory Modal */}
       {showInventoryModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginTop: 0 }}>Update Inventory</h3>
-            <p style={{ marginBottom: '1rem', color: '#64748b' }}>
+            <h3 className="modal-header-title">Update Inventory</h3>
+            <p className="text-dark-muted form-group">
               Updating stock for: <strong>{products.find(p => p.id === editingInventoryId)?.name}</strong>
             </p>
-            <div>
+            
+            <div className="form-group">
               <label className="form-label">New Total Stock:</label>
               <input 
                 type="number" 
-                className="form-control"
+                className="form-control" 
                 value={inventoryForm.stock} 
                 onChange={e => setInventoryForm({ stock: e.target.value })} 
-                min="0"
+                min="0" 
               />
             </div>
+            
             <div className="modal-actions">
               <button onClick={closeInventoryModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveInventory} className="btn btn-success">Save Stock</button>
@@ -805,49 +1084,53 @@ export default function App() {
         </div>
       )}
       
-      {/* PRODUCT MODAL (Name & Price) */}
+      {/* Product Modal */}
       {showProductModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginTop: 0 }}>{isEditMode ? 'Edit Product Details' : 'Add New Product'}</h3>
-            <div style={{ marginBottom: '1rem' }}>
+            <h3 className="modal-header-title">{isEditMode ? 'Edit Product Details' : 'Add New Product'}</h3>
+            
+            <div className="form-group">
               <label className="form-label">Name:</label>
               <input 
-                className="form-control"
+                className="form-control" 
                 value={productForm.name} 
                 onChange={e => setProductForm({ ...productForm, name: e.target.value })} 
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
+            
+            <div className="form-group">
               <label className="form-label">Purchase Price (rs):</label>
               <input 
                 type="number" 
-                className="form-control"
+                className="form-control" 
                 value={productForm.purchasePrice} 
                 onChange={e => setProductForm({ ...productForm, purchasePrice: e.target.value })} 
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
+            
+            <div className="form-group">
               <label className="form-label">Selling Price (rs):</label>
               <input 
                 type="number" 
-                className="form-control"
+                className="form-control" 
                 value={productForm.price} 
                 onChange={e => setProductForm({ ...productForm, price: e.target.value })} 
               />
             </div>
-            {/* Only show Initial Stock when CREATING a new product */}
+            
             {!isEditMode && (
-              <div style={{ marginBottom: '1rem' }}>
+              <div className="form-group">
                 <label className="form-label">Initial Stock:</label>
                 <input 
                   type="number" 
-                  className="form-control"
+                  className="form-control" 
                   value={productForm.stock} 
                   onChange={e => setProductForm({ ...productForm, stock: e.target.value })} 
                 />
               </div>
             )}
+            
             <div className="modal-actions">
               <button onClick={closeProductModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveProduct} className="btn btn-success">Save</button>
@@ -856,51 +1139,56 @@ export default function App() {
         </div>
       )}
 
-      {/* CUSTOMER MODAL */}
+      {/* Customer Modal */}
       {showCustomerModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 style={{ marginTop: 0 }}>{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
-            <div style={{ marginBottom: '1rem' }}>
+            <h3 className="modal-header-title">{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
+            
+            <div className="form-group">
               <label className="form-label">Customer Name:</label>
               <input 
                 type="text" 
-                className="form-control"
+                className="form-control" 
                 value={customerForm.name} 
                 onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })} 
-                placeholder="Enter customer name"
+                placeholder="Enter customer name" 
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
+            
+            <div className="form-group">
               <label className="form-label">GST No:</label>
-              <input
-                type="text"
-                className="form-control"
-                value={customerForm.gstno}
-                onChange={e => setCustomerForm({ ...customerForm, gstno: e.target.value })}
-                placeholder="Enter GST Number"
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.gstno} 
+                onChange={e => setCustomerForm({ ...customerForm, gstno: e.target.value })} 
+                placeholder="Enter GST Number" 
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
+            
+            <div className="form-group">
               <label className="form-label">Mobile:</label>
-              <input
-                type="text"
-                className="form-control"
-                value={customerForm.mobile}
-                onChange={e => setCustomerForm({ ...customerForm, mobile: e.target.value })}
-                placeholder="Enter Mobile Number"
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.mobile} 
+                onChange={e => setCustomerForm({ ...customerForm, mobile: e.target.value })} 
+                placeholder="Enter Mobile Number" 
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
+            
+            <div className="form-group">
               <label className="form-label">City:</label>
-              <input
-                type="text"
-                className="form-control"
-                value={customerForm.city}
-                onChange={e => setCustomerForm({ ...customerForm, city: e.target.value })}
-                placeholder="Enter City"
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.city} 
+                onChange={e => setCustomerForm({ ...customerForm, city: e.target.value })} 
+                placeholder="Enter City" 
               />
             </div>
+            
             <div className="modal-actions">
               <button onClick={closeCustomerModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSaveCustomer} className="btn btn-success">Save</button>

@@ -38,11 +38,20 @@ export const productService = {
 }
 
 export const invoiceService = {
-  create: (customerName, cartItems) =>
+  
+  create: (customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
     fetch(`${API_URL}/api/invoices/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerName, cartItems }),
+      body: JSON.stringify({ 
+        customerName, 
+        cartItems, 
+        grossTotal, 
+        discountPercent, 
+        cgst, 
+        sgst, 
+        finalTotal 
+      }),
     }).then(res => {
       if (!res.ok) throw new Error('Invoice creation failed')
       return res.json()

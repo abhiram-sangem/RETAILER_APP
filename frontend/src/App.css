@@ -343,3 +343,354 @@ body, html, #root {
   gap: 1rem;
   margin-top: 1.5rem;
 }
+
+
+/* --- Header & Search Bar --- */
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+.header-search {
+  max-width: 300px;
+  margin-bottom: 0;
+  margin-left: auto;
+}
+.header-search.search-expanded {
+  max-width: 250px;
+  margin-left: 0;
+  flex: 1;
+}
+
+/* --- Custom Search Dropdown --- */
+.dropdown-container {
+  position: relative;
+  text-align: left;
+}
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  border: 1px solid #cbd5e1;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+.dropdown-item {
+  padding: 0.8rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  color: #0f172a;
+}
+.dropdown-item:hover {
+  background-color: #f1f5f9;
+}
+.dropdown-empty {
+  padding: 0.8rem;
+  color: #94a3b8;
+}
+
+/* --- Clickable Sales List Rows --- */
+.product-row {
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #e2e8f0;
+}
+.product-row.available {
+  cursor: pointer;
+}
+.product-row.available:hover {
+  background-color: #f1f5f9;
+}
+.product-row.out-of-stock {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.cell-padded {
+  padding: 1rem 0.5rem;
+}
+.col-product-name {
+  width: 40%;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.col-action {
+  text-align: right;
+}
+.text-add {
+  color: #3b82f6;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+/* --- Invoice Details Modal --- */
+.invoice-details-card {
+  margin-top: 2rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+}
+.invoice-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.invoice-total {
+  font-size: 1.2rem;
+}
+
+/* --- Pagination Controls --- */
+.pagination-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.pagination-info {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+.pagination-text {
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+/* --- Utility / Status Colors --- */
+.text-success { color: #10b981; }
+.text-danger { color: #ef4444; }
+.text-warning { color: #f59e0b; }
+.text-muted { color: #94a3b8; }
+.text-dark-muted { color: #64748b; }
+.fw-bold { font-weight: bold; }
+.fs-lg { font-size: 1.1rem; }
+.fs-sm { font-size: 0.8rem; }
+.mb-0 { margin-bottom: 0; }
+.mt-0 { margin-top: 0; }
+
+/* --- Horizontal Block Layout for Sales List --- */
+.block-table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0 0.8rem !important; /* This creates the gap between blocks */
+}
+
+.block-table thead th {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  color: #64748b;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+}
+
+.block-table .product-row {
+  background-color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border-bottom: none; /* Remove the old solid line */
+}
+
+/* 3D lift effect on hover instead of turning grey */
+.block-table .product-row:hover.available {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.08);
+  background-color: white; 
+}
+
+.block-table td {
+  border: none !important; 
+  padding: 1.2rem 1rem !important;
+}
+
+/* Ensure the background and borders curve smoothly around the edges */
+.block-table td:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+  border-left: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.block-table td:not(:first-child):not(:last-child) {
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.block-table td:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+  border-right: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* --- Sales Control Panel (Top Header) --- */
+.sales-control-panel {
+  background-color: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem; /* Vertical spacing between rows */
+}
+
+.sales-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 280px;
+}
+
+.input-group label {
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.input-group input, 
+.input-group .dropdown-container {
+  width: 100%;
+}
+
+/* Customer Select Alert State */
+.customer-input-warning {
+  border-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+.action-buttons-right {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* --- Receipt Summary Panel --- */
+.receipt-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.receipt-panel {
+  width: 350px;
+  background-color: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.receipt-header {
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #cbd5e1;
+  padding-bottom: 0.5rem;
+  font-size: 1.2rem;
+  color: #0f172a;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+  color: #64748b;
+}
+
+.receipt-row.highlight-red {
+  color: #ef4444;
+}
+
+.receipt-total {
+  display: flex;
+  justify-content: space-between;
+  border-top: 2px dashed #cbd5e1;
+  padding-top: 1rem;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #0f172a;
+}
+
+.discount-input {
+  width: 80px;
+  text-align: right;
+  margin-bottom: 0;
+}
+
+.btn-checkout {
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.8rem;
+  font-size: 1.1rem;
+}
+
+/* --- Modal Form Groups --- */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.modal-header-title {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #0f172a;
+}
+
+/* --- Invoice Details Modal Specifics --- */
+.invoice-math-wrapper {
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1rem;
+  
+}
+
+.invoice-math-box {
+  width: 280px;
+}
+
+/* Fix table overlaps */
+.table-responsive {
+  overflow-x: visible;
+  margin-top: 1rem;
+}
+
+
+/* --- Vertical Info Blocks --- */
+.info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.info-label {
+  color: #64748b;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 1.1rem;
+  color: #0f172a;
+}

@@ -49,10 +49,24 @@ public class InvoiceController {
             return ResponseEntity.badRequest().build();
         }
 
+        // Safely extract the new billing details from the frontend JSON
+        Double grossTotal = request.get("grossTotal") != null ? ((Number) request.get("grossTotal")).doubleValue() : 0.0;
+        Double discountPercent = request.get("discountPercent") != null ? ((Number) request.get("discountPercent")).doubleValue() : 0.0;
+        Double cgst = request.get("cgst") != null ? ((Number) request.get("cgst")).doubleValue() : 0.0;
+        Double sgst = request.get("sgst") != null ? ((Number) request.get("sgst")).doubleValue() : 0.0;
+        Double finalTotal = request.get("finalTotal") != null ? ((Number) request.get("finalTotal")).doubleValue() : 0.0;
+
         Invoice invoice = new Invoice();
         invoice.setCustomerName(customerName);
         invoice.setOrderDate(LocalDateTime.now());
-        double totalAmount = 0.0;
+        
+        // Save all the new math fields
+        invoice.setGrossTotal(grossTotal);
+        invoice.setDiscountPercent(discountPercent);
+        invoice.setCgst(cgst);
+        invoice.setSgst(sgst);
+        invoice.setFinalTotal(finalTotal);
+        invoice.setTotalAmount(finalTotal);
 
         for (Map<String, Object> item : cartItems) {
             Long productId = Long.valueOf(item.get("id").toString());
@@ -72,11 +86,10 @@ public class InvoiceController {
                 double price = product.getPrice();
                 InvoiceItem invoiceItem = new InvoiceItem(invoice, product, quantity, price);
                 invoice.addItem(invoiceItem);
-                totalAmount += price * quantity;
             }
         }
 
-        invoice.setTotalAmount(totalAmount);
+        // No need to calculate totalAmount manually anymore, we trust the finalTotal
         Invoice savedInvoice = invoiceRepository.save(invoice);
         return ResponseEntity.ok(savedInvoice);
     }
@@ -93,7 +106,15 @@ public class InvoiceController {
         return invoiceRepository.findById(id)
                 .map(invoice -> {
                     invoice.setCustomerName(invoiceDetails.getCustomerName());
-                    invoice.setTotalAmount(invoiceDetails.getTotalAmount());
+                    
+                    // Replace totalAmount with all the new detailed fields
+                    invoice.setGrossTotal(invoiceDetails.getGrossTotal());
+                    invoice.setDiscountPercent(invoiceDetails.getDiscountPercent());
+                    invoice.setCgst(invoiceDetails.getCgst());
+                    invoice.setSgst(invoiceDetails.getSgst());
+                    invoice.setFinalTotal(invoiceDetails.getFinalTotal());
+                    invoice.setTotalAmount(invoiceDetails.getFinalTotal()); // Ensure totalAmount is updated to match finalTotal
+                    
                     return ResponseEntity.ok(invoiceRepository.save(invoice));
                 })
                 .orElse(ResponseEntity.notFound().build());

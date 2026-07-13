@@ -3,6 +3,12 @@ import './App.css'
 import { productService, invoiceService, customerService } from './services/api'
 
 export default function App() {
+  // --- Login State ---
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+
   const [view, setView] = useState('list') 
   const [products, setProducts] = useState([])
   const [invoices, setInvoices] = useState([])
@@ -73,6 +79,17 @@ export default function App() {
     setCurrentPage(1)
   }, [searchQuery, itemsPerPage])
 
+  // --- Login Handler ---
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (username === 'admin' && password === '12345') {
+      setIsLoggedIn(true);
+      setLoginError('');
+    } else {
+      setLoginError('Invalid username or password');
+    }
+  };
+
   // --- Advanced Billing Math ---
   const billingDetails = useMemo(() => {
     const grossTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
@@ -125,12 +142,11 @@ export default function App() {
     return (
       <div className="pagination-wrapper">
         <div>
-          <label className="fw-bold" style={{ marginRight: '0.5rem' }}>
+          <label className="fw-bold">
             Rows per page:
           </label>
           <select 
-            className="form-control mb-0" 
-            style={{ width: 'auto', display: 'inline-block', padding: '0.3rem' }} 
+            className="form-control mb-0 pagination-select" 
             value={itemsPerPage} 
             onChange={e => setItemsPerPage(Number(e.target.value))}
           >
@@ -379,11 +395,55 @@ export default function App() {
     invoiceService.getInvoiceById(invoiceId).then(data => setSelectedInvoice(data)) 
   }
 
+  // =========================================
+  // CONDITIONAL RENDER: LOGIN SCREEN
+  // =========================================
+  if (!isLoggedIn) {
+    return (
+      <div className="modal-overlay login-overlay">
+        <form onSubmit={handleLogin} className="card login-card">
+          <h2 className="modal-header-title">Retailer Login</h2>
+          
+          {loginError && <div className="text-danger mb-3">{loginError}</div>}
+          
+          <div className="form-group">
+            <label className="form-label">Username</label>
+            <input 
+              type="text" 
+              value={username} 
+              onChange={(e) => setUsername(e.target.value)} 
+              className="form-control"
+              required 
+            />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              className="form-control"
+              required 
+            />
+          </div>
+          
+          <button type="submit" className="btn btn-primary btn-checkout">
+            Login to Dashboard
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // =========================================
+  // MAIN APP RENDER
+  // =========================================
   return (
     <div className="app-layout">
       
       {/* SIDEBAR NAVIGATION */}
-      <aside className="sidebar">
+      <aside className="sidebar flex-sidebar">
         <div className="sidebar-header">
           Retailer App
         </div>
@@ -433,6 +493,20 @@ export default function App() {
         >
           Manage Products
         </button>
+
+        {/* LOGOUT BUTTON ADDED HERE */}
+        <div className="sidebar-footer">
+          <button 
+            className="btn btn-danger w-100" 
+            onClick={() => {
+              setIsLoggedIn(false);
+              setUsername('');
+              setPassword('');
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
@@ -452,7 +526,7 @@ export default function App() {
               <div className="sales-control-row">
                 
                 {/* Customer Input Group */}
-                <div className="input-group" style={{ flex: 'none', width: '250px' }}>
+                <div className="input-group customer-dropdown-group">
                   <label>Select Customer</label>
                   <div className="dropdown-container">
                     <input 
@@ -518,7 +592,7 @@ export default function App() {
 
             {/* Product Blocks Table */}
             <div className="table-responsive">
-              <table className="block-table">
+              <table className="block-table data-table">
                 <thead>
                   <tr>
                     <th className="col-product-name">Product Name</th>
@@ -605,7 +679,7 @@ export default function App() {
                       <td>
                         <input
                           type="number" 
-                          className="quantity-input" 
+                          className="quantity-input form-control" 
                           min="1" 
                           max={item.stock} 
                           value={item.quantity} 
@@ -738,7 +812,7 @@ export default function App() {
 
             {/* Sales Details Modal (Inline) */}
             {selectedInvoice && (
-              <div className="card invoice-details-card">
+              <div className="card invoice-details-card mb-4">
                 <h3 className="modal-header-title">Sale #{selectedInvoice.id} Details</h3>
                 
                 {/* --- VERTICAL INFO BLOCKS FOR CUSTOMER DETAILS --- */}
@@ -754,7 +828,7 @@ export default function App() {
                 </div>
 
                 <h4>Items Purchased</h4>
-                <div className="table-responsive" style={{ marginBottom: '1rem' }}>
+                <div className="table-responsive mb-3">
                   <table className="data-table">
                     <thead>
                       <tr>
@@ -779,7 +853,7 @@ export default function App() {
 
                 {/* Vertical Math Details */}
                 <div className="invoice-math-wrapper">
-                  <div className="invoice-math-box">
+                  <div className="invoice-math-box receipt-panel">
                     <div className="receipt-row">
                       <strong>Gross Total:</strong>
                       <span>{selectedInvoice.grossTotal || selectedInvoice.totalAmount} rs</span>
@@ -815,8 +889,7 @@ export default function App() {
                 
                 <button 
                   onClick={() => setSelectedInvoice(null)} 
-                  className="btn btn-secondary" 
-                  style={{ marginTop: '1.5rem' }}
+                  className="btn btn-secondary mt-3" 
                 >
                   Close View
                 </button>

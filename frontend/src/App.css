@@ -694,3 +694,33 @@ body, html, #root {
   font-size: 1.1rem;
   color: #0f172a;
 }
+
+/* =========================================
+   --- Added for Login & Logout --- 
+   ========================================= */
+
+.login-overlay {
+  background-color: #f1f5f9; /* Matches your body color to look like a full page */
+  backdrop-filter: none;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.flex-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1.5rem;
+  border-top: 1px solid #1e293b;
+}
+
+.w-100 {
+  width: 100%;
+}

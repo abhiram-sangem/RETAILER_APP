@@ -30,6 +30,21 @@ public class Invoice {
     @Column(nullable = false)
     private Double totalAmount;
 
+    @Column(columnDefinition = "double default 0.0")
+    private Double grossTotal;
+
+    @Column(columnDefinition = "double default 0.0")
+    private Double discountPercent;
+
+    @Column(columnDefinition = "double default 0.0")
+    private Double cgst;
+
+    @Column(columnDefinition = "double default 0.0")
+    private Double sgst;
+
+    @Column(columnDefinition = "double default 0.0")
+    private Double finalTotal;
+
     @Column(nullable = false)
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime orderDate;
@@ -42,9 +57,13 @@ public class Invoice {
         this.orderDate = LocalDateTime.now();
     }
 
-    public Invoice(String customerName, Double totalAmount) {
+    public Invoice(String customerName, Double grossTotal, Double discountPercent, Double cgst, Double sgst, Double finalTotal) {
         this.customerName = customerName;
-        this.totalAmount = totalAmount;
+        this.grossTotal = grossTotal;
+        this.discountPercent = discountPercent;
+        this.cgst = cgst;
+        this.sgst = sgst;
+        this.finalTotal = finalTotal;
         this.orderDate = LocalDateTime.now();
     }
 
@@ -64,14 +83,13 @@ public class Invoice {
         this.customerName = customerName;
     }
 
-    public Double getTotalAmount() {
+    public Double getTotalAmount() { 
         return totalAmount;
     }
-
-    public void setTotalAmount(Double totalAmount) {
+    public void setTotalAmount(Double totalAmount) { 
         this.totalAmount = totalAmount;
     }
-
+    
     public LocalDateTime getOrderDate() {
         return orderDate;
     }
@@ -96,5 +114,45 @@ public class Invoice {
     public void removeItem(InvoiceItem item) {
         items.remove(item);
         item.setInvoice(null);
+    }
+
+    public Double getGrossTotal() { 
+        return grossTotal; 
+    }
+
+    public void setGrossTotal(Double grossTotal) { 
+        this.grossTotal = grossTotal; 
+    }
+
+    public Double getDiscountPercent() { 
+        return discountPercent;
+    }
+
+    public void setDiscountPercent(Double discountPercent) { 
+        this.discountPercent = discountPercent;
+    }
+
+    public Double getCgst() {
+        return cgst; 
+    }
+
+    public void setCgst(Double cgst) { 
+        this.cgst = cgst; 
+    }
+
+    public Double getSgst() { 
+        return sgst;
+    }
+
+    public void setSgst(Double sgst) { 
+        this.sgst = sgst; 
+    }
+
+    public Double getFinalTotal() { 
+        return finalTotal; 
+    }
+
+    public void setFinalTotal(Double finalTotal) {
+        this.finalTotal = finalTotal; 
     }
 }

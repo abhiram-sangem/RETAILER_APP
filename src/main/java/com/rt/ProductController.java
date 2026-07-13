@@ -16,39 +16,37 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/products")
 @CrossOrigin(origins = "*")
-public class CartController {
-    
+public class ProductController {
+
     private final ProductRepository productRepository;
 
-    public CartController(ProductRepository productRepository) {
+    public ProductController(ProductRepository productRepository) {
         this.productRepository = productRepository;
     }
-    
-    @GetMapping("/cart")
+
+    @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
-        List<Product> products = productRepository.findAll();
-        return ResponseEntity.ok(products);
+        return ResponseEntity.ok(productRepository.findAll());
     }
-    
-    @GetMapping("/cart/{id}")
+
+    @GetMapping("/{id}")
     public ResponseEntity<Product> getProductById(@PathVariable Long id) {
         return productRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
-    
-    @PostMapping("/cart")
+
+    @PostMapping
     public ResponseEntity<Product> addProduct(@RequestBody Product product) {
-        Product savedProduct = productRepository.save(product);
-        return ResponseEntity.ok(savedProduct);
+        return ResponseEntity.ok(productRepository.save(product));
     }
-    
-    @PutMapping("/cart/{id}")
+
+    @PutMapping("/{id}")
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product productDetails) {
         return productRepository.findById(id)
                 .map(product -> {
-                     
-                    // it only updates the field if the frontend actually sent it
+                    // NULL CHECKS ADDED HERE: 
+                    // This stops the DataIntegrityViolationException
                     if (productDetails.getName() != null) {
                         product.setName(productDetails.getName());
                     }
@@ -56,15 +54,18 @@ public class CartController {
                         product.setPrice(productDetails.getPrice());
                     }
                     if (productDetails.getStock() != null) {
-                        product.setStock(productDetails.getStock()); 
+                        product.setStock(productDetails.getStock());
+                    }
+                    if (productDetails.getPurchasePrice() != null) {
+                        product.setPurchasePrice(productDetails.getPurchasePrice());
                     }
                     
                     return ResponseEntity.ok(productRepository.save(product));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
-    
-    @DeleteMapping("/cart/{id}")
+
+    @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         if (productRepository.existsById(id)) {
             productRepository.deleteById(id);

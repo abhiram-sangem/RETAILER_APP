@@ -1,522 +1,1270 @@
 import { useEffect, useMemo, useState } from 'react'
-import Login from './Login.jsx'
 import './App.css'
-import { productService, invoiceService } from './services/api'
-
-// Default fallback products used when the backend API is unavailable.
-const DEFAULT_PRODUCTS = [
-  { id: '1', name: 'VESTS', price: 120 },
-  { id: '2', name: 'BRIEF', price: 320 },
-  { id: '3', name: 'SHIRT', price: 850 },
-]
+import { productService, invoiceService, customerService } from './services/api'
 
 export default function App() {
+  // --- Login State ---
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
 
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const auth = localStorage.getItem('isAuthenticated')
-    return auth === 'true'
-  })
-  // Current page view state: list, products, cart, invoices, or add/edit product.
-  const [view, setView] = useState('list')
+  const [view, setView] = useState('list') 
   const [products, setProducts] = useState([])
   const [invoices, setInvoices] = useState([])
+  const [customers, setCustomers] = useState([])
+  const [isSalesMenuOpen, setIsSalesMenuOpen] = useState(true)
+  const [activeCustomer, setActiveCustomer] = useState(null)
+  
+  // --- Search & Pagination State ---
+  const [searchQuery, setSearchQuery] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('') 
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(20)
 
-  // Load cart from localStorage on initial render.
+  // --- Cart & Billing State ---
+  const [discountPercent, setDiscountPercent] = useState(0)
   const [cart, setCart] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('cart')) || []
-    } catch {
-      return []
+    try { 
+      return JSON.parse(localStorage.getItem('cart')) || [] 
+    } catch { 
+      return [] 
     }
   })
-  const [invoiceMessage, setInvoiceMessage] = useState('')
   const [error, setError] = useState('')
 
-  // Modal states for add/edit product
+  // --- Modals State ---
   const [showProductModal, setShowProductModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
-  const [productForm, setProductForm] = useState({ name: '', price: '' })
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState(null)
+  const [productForm, setProductForm] = useState({ 
+    name: '', 
+    purchasePrice: '', 
+    price: '', 
+    stock: '' 
+  })
+
+  const [showInventoryModal, setShowInventoryModal] = useState(false)
+  const [editingInventoryId, setEditingInventoryId] = useState(null)
+  const [inventoryForm, setInventoryForm] = useState({ stock: '' })
+
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [isCustomerEditMode, setIsCustomerEditMode] = useState(false)
+  const [editingCustomerId, setEditingCustomerId] = useState(null)
+  const [customerForm, setCustomerForm] = useState({ 
+    name: '', 
+    gstno: '', 
+    mobile: '', 
+    city: '' 
+  })
+
   const [selectedInvoice, setSelectedInvoice] = useState(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      setView('login')
-    } 
-    
-  }, [isAuthenticated])
-
-  // Fetch products once when component mounts.
-  useEffect(() => {
     loadProducts()
+    loadCustomers()
   }, [])
 
-  // Persist cart to localStorage whenever it changes.
   useEffect(() => {
     localStorage.setItem('cart', JSON.stringify(cart))
   }, [cart])
 
-  // Compute cart total price efficiently with memoization.
-  const cartTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [cart],
+  useEffect(() => {
+    setSearchQuery('')
+    setCurrentPage(1)
+  }, [view])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, itemsPerPage])
+
+  // --- Login Handler ---
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (username === 'admin' && password === '12345') {
+      setIsLoggedIn(true);
+      setLoginError('');
+    } else {
+      setLoginError('Invalid username or password');
+    }
+  };
+
+  // --- Advanced Billing Math ---
+  const billingDetails = useMemo(() => {
+    const grossTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const discountAmount = grossTotal * (discountPercent / 100)
+    const taxableAmount = grossTotal - discountAmount
+    const cgst = taxableAmount * 0.025
+    const sgst = taxableAmount * 0.025
+    const finalTotal = taxableAmount + cgst + sgst
+
+    return { 
+      grossTotal, 
+      discountAmount, 
+      cgst, 
+      sgst, 
+      finalTotal 
+    }
+  }, [cart, discountPercent])
+
+  // --- Filtering Logic ---
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // Handle successful login by updating authentication state and view.
-  function handleLoginSuccess() {
-    setIsAuthenticated(true)
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (c.mobile && c.mobile.includes(searchQuery)) ||
+    (c.city && c.city.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (c.gstno && c.gstno.toLowerCase().includes(searchQuery.toLowerCase()))
+  )
+
+  const dropdownFilteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(customerSearch.toLowerCase())
+  )
+
+  const filteredInvoices = invoices.filter(i => 
+    i.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    i.id.toString().includes(searchQuery)
+  )
+
+  // --- Pagination Logic ---
+  const indexOfLastItem = currentPage * itemsPerPage
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage
+
+  const paginatedProducts = filteredProducts.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedCustomers = filteredCustomers.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedInvoices = filteredInvoices.slice(indexOfFirstItem, indexOfLastItem)
+
+  function renderPagination(totalItems) {
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1
+    return (
+      <div className="pagination-wrapper">
+        <div>
+          <label className="fw-bold">
+            Rows per page:
+          </label>
+          <select 
+            className="form-control mb-0 pagination-select" 
+            value={itemsPerPage} 
+            onChange={e => setItemsPerPage(Number(e.target.value))}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={40}>40</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+        <div className="pagination-info">
+          <span className="pagination-text">
+            Showing {totalItems === 0 ? 0 : indexOfFirstItem + 1} - {Math.min(indexOfLastItem, totalItems)} of {totalItems}
+          </span>
+          <div className="btn-group">
+            <button 
+              className="btn btn-secondary" 
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(p => p - 1)}
+            >
+              Prev
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              disabled={currentPage >= totalPages} 
+              onClick={() => setCurrentPage(p => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
-  function handleLogout() {
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('userRole')
-    setIsAuthenticated(false)
-    setView('list')
-  }
-  // Load product list from backend; fallback to sample data on failure.
-  function loadProducts() {
-    productService.getProducts()
-      .then(data => setProducts(Array.isArray(data) ? data : DEFAULT_PRODUCTS))
-      .catch(() => {
-        setError('Unable to load products from backend. Showing sample product list.')
-        setProducts(DEFAULT_PRODUCTS)
-      })
+  // --- API Loaders & Cart Functions ---
+  function loadProducts() { 
+    productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])) 
   }
 
-  // Add a product to cart or increase its quantity if already present.
+  function loadCustomers() { 
+    customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])) 
+  }
+
   function addToCart(product) {
+    if (product.stock <= 0) {
+      return window.alert(`Sorry, ${product.name} is currently out of stock!`)
+    }
+    
     setCart(current => {
       const existing = current.find(item => item.id === product.id)
+      
       if (existing) {
-        return current.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
+        if (existing.quantity >= product.stock) {
+          window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`)
+          return current
+        }
+        return current.map(item => 
+          item.id === product.id 
+            ? { ...item, quantity: item.quantity + 1 } 
+            : item
         )
       }
       return [...current, { ...product, quantity: 1 }]
     })
-    window.alert(`${product.name} added to cart!`)
   }
 
-  // Update quantity for a specific cart item by index.
   function updateQuantity(index, quantity) {
     if (quantity < 1) return
-    setCart(current =>
-      current.map((item, idx) =>
-        idx === index ? { ...item, quantity } : item,
-      ),
-    )
+    
+    setCart(current => {
+      const item = current[index]
+      if (quantity > item.stock) {
+        window.alert(`Cannot exceed available inventory (${item.stock} left).`)
+        return current
+      }
+      return current.map((itm, idx) => 
+        idx === index 
+          ? { ...itm, quantity } 
+          : itm
+      )
+    })
   }
 
-  // Remove an item from the cart by its index.
-  function removeCartItem(index) {
-    setCart(current => current.filter((_, idx) => idx !== index))
+  function removeCartItem(index) { 
+    setCart(current => current.filter((_, idx) => idx !== index)) 
   }
 
-  function handleSaveProduct() {
-    if (!productForm.name.trim() || !productForm.price) {
-      window.alert('Please fill in all fields')
-      return
-    }
-
-    const name = productForm.name.trim()
-    const price = parseFloat(productForm.price)
-
-    if (price <= 0) {
-      window.alert('Price must be greater than 0')
-      return
-    }
-
-    if (isEditMode && editingProductId) {
-      // Update existing product
-      productService.updateProduct(editingProductId, name, price)
-        .then(() => {
-          setProducts(current =>
-            current.map(p =>
-              p.id === editingProductId ? { ...p, name, price } : p
-            )
-          )
-          setShowProductModal(false)
-          setProductForm({ name: '', price: '' })
-          setIsEditMode(false)
-          setEditingProductId(null)
-          window.alert('Product updated successfully!')
-        })
-        .catch(err => {
-          window.alert('Failed to update product: ' + err.message)
-        })
-    } else {
-      // Add new product
-      productService.addProduct(name, price)
-        .then(newProduct => {
-          setProducts(current => [...current, newProduct])
-          setShowProductModal(false)
-          setProductForm({ name: '', price: '' })
-          window.alert('Product added successfully!')
-        })
-        .catch(err => {
-          window.alert('Failed to add product: ' + err.message)
-        })
-    }
-  }
-
-  // Delete product handler
-  function handleDeleteProduct(productId, productName) {
-    const confirmed = window.confirm(`Are you sure you want to delete "${productName}"?`)
-    if (!confirmed) return
-
-    productService.deleteProduct(productId)
-      .then(() => {
-        setProducts(current => current.filter(p => p.id !== productId))
-        window.alert('Product deleted successfully!')
-      })
-      .catch(err => {
-        window.alert('Failed to delete product: ' + err.message)
-      })
-  }
-
-  // Open add product modal
-  function openAddProductModal() {
-    setIsEditMode(false)
-    setEditingProductId(null)
-    setProductForm({ name: '', price: '' })
-    setShowProductModal(true)
-  }
-
-  // Open edit product modal
-  function openEditProductModal(product) {
-    setIsEditMode(true)
-    setEditingProductId(product.id)
-    setProductForm({ name: product.name, price: product.price.toString() })
-    setShowProductModal(true)
-  }
-
-  // Close product modal
-  function closeProductModal() {
-    setShowProductModal(false)
-    setProductForm({ name: '', price: '' })
-    setIsEditMode(false)
-    setEditingProductId(null)
-  }
-
-  // Load and display invoices
-  function handleViewInvoices() {
-    invoiceService.getInvoices()
-      .then(data => {
-        setInvoices(Array.isArray(data) ? data : [])
-        setSelectedInvoiceId(null)
-        setSelectedInvoice(null)
-        setView('invoices')
-      })
-      .catch(err => {
-        window.alert('Failed to load invoices: ' + err.message)
-      })
-  }
-
-  // View invoice details
-  function handleViewInvoiceDetails(invoiceId) {
-    invoiceService.getInvoiceById(invoiceId)
-      .then(data => {
-        setSelectedInvoice(data)
-        setSelectedInvoiceId(invoiceId)
-      })
-      .catch(err => {
-        window.alert('Failed to load invoice details: ' + err.message)
-      })
-  }
-
-  // Submit the shopping cart and create an invoice using backend API.
   function submitCart() {
     if (!cart.length) {
-      window.alert('Cart is empty. Please add items before submitting.')
-      return
+      return window.alert('Cart is empty.')
+    }
+    if (!activeCustomer) {
+      return window.alert('Please select a customer from the top dropdown before completing the sale.')
     }
 
-    const customerName = window.prompt('Please enter your name for the invoice:')
-    if (!customerName || !customerName.trim()) {
-      window.alert('Customer name is required.')
-      return
-    }
-
-    invoiceService.create(customerName.trim(), cart)
+    invoiceService.create(
+      activeCustomer.name, 
+      cart, 
+      billingDetails.grossTotal, 
+      discountPercent, 
+      billingDetails.cgst, 
+      billingDetails.sgst, 
+      billingDetails.finalTotal
+    )
       .then(invoice => {
-        setInvoiceMessage(
-          `Invoice #${invoice.id} created for ${invoice.customerName} - Total: ${invoice.totalAmount}rs`,
-        )
+        window.alert(`Sale #${invoice.id} completed successfully!`)
         setCart([])
-        // Refresh products after creating invoice
-        loadProducts()
+        setActiveCustomer(null)
+        setCustomerSearch('')
+        setDiscountPercent(0)
+        setView('list')
+        loadProducts() 
       })
-      .catch(() => {
-        window.alert('Failed to create invoice. Please try again.')
-      })
+      .catch((err) => window.alert('Failed to complete sale. ' + err.message))
   }
 
-  // Build the rows for the products table view.
-  const productTableRows = products.map((product, index) => (
-    <tr key={product.id}>
-      <td>{index + 1}</td>
-      <td>{product.name}</td>
-      <td>{product.price} rs</td>
-      <td>
-        <button className="edit-btn" onClick={() => openEditProductModal(product)}>
-          Edit
-        </button>
-        <button className="delete-btn" onClick={() => handleDeleteProduct(product.id, product.name)}>
-          Delete
-        </button>
-      </td>
-    </tr>
-  ))
+  function cancelSale() {
+    if (window.confirm("Are you sure you want to cancel the current sale?")) {
+      setCart([])
+      setActiveCustomer(null)
+      setCustomerSearch('')
+      setDiscountPercent(0)
+      setView('list')
+    }
+  }
 
-  return (
-    <div className="page-shell">
-      <h1>Shopping Cart App</h1>
-      {error && <div className="status-message">{error}</div>}
+  // --- CRUD Functions ---
+  function handleSaveProduct() {
+    const name = productForm.name.trim()
+    const purchasePrice = parseFloat(productForm.purchasePrice)
+    const price = parseFloat(productForm.price)
+    
+    if (!name || isNaN(purchasePrice) || isNaN(price) || purchasePrice < 0 || price <= 0) {
+      return window.alert('Invalid details.')
+    }
 
-      <div className="nav-buttons">
-        <button onClick={() => setView('products')}>Manage Products</button>
-        <button onClick={() => setView('list')}>Shopping List</button>
-        <button onClick={() => setView('cart')}>Shopping Cart</button>
-      </div>
+    if (isEditMode) {
+      const existingProduct = products.find(p => p.id === editingProductId)
+      productService.updateProduct(
+        editingProductId, 
+        name, 
+        purchasePrice, 
+        price, 
+        existingProduct ? existingProduct.stock : 0
+      ).then(() => { 
+        loadProducts()
+        closeProductModal() 
+      })
+    } else {
+      productService.addProduct(
+        name, 
+        purchasePrice, 
+        price, 
+        parseInt(productForm.stock, 10) || 0
+      ).then(() => { 
+        loadProducts()
+        closeProductModal() 
+      })
+    }
+  }
 
-      {view === 'list' && (
-        <>
-          <h2>List of products</h2>
-          <ul id="product-list">
-            {products.map(product => (
-              <li key={product.id}>
-                <div>
-                  <span className="product-name">{product.name}</span>
-                  <span className="product-price">{product.price}rs</span>
-                </div>
-                <button className="add-to-cart-btn" onClick={() => addToCart(product)}>
-                  Add to Cart
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+  function handleDeleteProduct(id, name) { 
+    if (window.confirm(`Delete "${name}"?`)) {
+      productService.deleteProduct(id).then(loadProducts) 
+    }
+  }
 
-      {view === 'products' && (
-        <>
-          <h2>Product Management</h2>
-          <div className="table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Product Name</th>
-                  <th>Price (rs)</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>{productTableRows}</tbody>
-            </table>
+  function closeProductModal() { 
+    setShowProductModal(false)
+    setProductForm({ name: '', purchasePrice: '', price: '', stock: '' }) 
+  }
+
+  function openInventoryModal(product) { 
+    setEditingInventoryId(product.id)
+    setInventoryForm({ stock: product.stock.toString() })
+    setShowInventoryModal(true) 
+  }
+
+  function closeInventoryModal() { 
+    setShowInventoryModal(false)
+    setEditingInventoryId(null)
+    setInventoryForm({ stock: '' }) 
+  }
+
+  function handleSaveInventory() {
+    const newStock = parseInt(inventoryForm.stock, 10)
+    if (isNaN(newStock) || newStock < 0) {
+      return window.alert('Stock must be 0 or greater.')
+    }
+    
+    const product = products.find(p => p.id === editingInventoryId)
+    productService.updateProduct(
+      product.id, 
+      product.name, 
+      product.purchasePrice, 
+      product.price, 
+      newStock
+    ).then(() => { 
+      loadProducts()
+      closeInventoryModal() 
+    })
+  }
+
+  function handleSaveCustomer() {
+    const { name, gstno, mobile, city } = customerForm
+    if (!name?.trim()) {
+      return window.alert('Name is required')
+    }
+
+    const action = isCustomerEditMode 
+      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city) 
+      : customerService.addCustomer(name, gstno, mobile, city)
+      
+    action.then(() => { 
+      loadCustomers()
+      closeCustomerModal() 
+    })
+  }
+
+  function handleDeleteCustomer(id, name) {
+    if (window.confirm(`Delete customer "${name}"?`)) {
+      customerService.deleteCustomer(id).then(() => {
+        loadCustomers()
+        if (activeCustomer?.id === id) { 
+          setActiveCustomer(null)
+          setCustomerSearch('') 
+        }
+      })
+    }
+  }
+
+  function closeCustomerModal() { 
+    setShowCustomerModal(false)
+    setCustomerForm({ name: '', gstno: '', mobile: '', city: '' }) 
+  }
+
+  function handleViewSalesList() {
+    invoiceService.getInvoices().then(data => {
+      const sortedInvoices = (data || []).sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))
+      setInvoices(sortedInvoices)
+      setView('invoices')
+    })
+  }
+
+  function handleViewInvoiceDetails(invoiceId) { 
+    invoiceService.getInvoiceById(invoiceId).then(data => setSelectedInvoice(data)) 
+  }
+
+  // =========================================
+  // CONDITIONAL RENDER: LOGIN SCREEN
+  // =========================================
+  if (!isLoggedIn) {
+    return (
+      <div className="modal-overlay login-overlay">
+        <form onSubmit={handleLogin} className="card login-card">
+          <h2 className="modal-header-title">Retailer Login</h2>
+          
+          {loginError && <div className="text-danger mb-3">{loginError}</div>}
+          
+          <div className="form-group">
+            <label className="form-label">Username</label>
+            <input 
+              type="text" 
+              value={username} 
+              onChange={(e) => setUsername(e.target.value)} 
+              className="form-control"
+              required 
+            />
           </div>
-          <div className="button-row">
-            <button onClick={openAddProductModal} className="add-btn">
-              Add New Product
-            </button>
-            <button onClick={handleViewInvoices} className="view-btn">
-              View Invoices
-            </button>
-            <button onClick={() => setView('list')} className="back-btn">
-              Start Shopping
-            </button>
+          
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              className="form-control"
+              required 
+            />
           </div>
-        </>
-      )}
-
-      {view === 'cart' && (
-        <>
-          <h2>Shopping Cart</h2>
-          <button className="back-button" onClick={() => setView('list')}>
-            Back to Product List
+          
+          <button type="submit" className="btn btn-primary btn-checkout">
+            Login to Dashboard
           </button>
-          <div className="table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Price</th>
-                  <th>Quantity</th>
-                  <th>Total</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.length ? (
-                  cart.map((item, idx) => (
+        </form>
+      </div>
+    );
+  }
+
+  // =========================================
+  // MAIN APP RENDER
+  // =========================================
+  return (
+    <div className="app-layout">
+      
+      {/* SIDEBAR NAVIGATION */}
+      <aside className="sidebar flex-sidebar">
+        <div className="sidebar-header">
+          Retailer App
+        </div>
+        
+        <div className="menu-group">
+          <button 
+            className="menu-btn" 
+            onClick={() => setIsSalesMenuOpen(!isSalesMenuOpen)}
+          >
+            <span>Sales</span>
+            <span>{isSalesMenuOpen ? ' ' : ' '}</span>
+          </button>
+          
+          {isSalesMenuOpen && (
+            <div>
+              <button 
+                className={`submenu-btn ${['list', 'cart'].includes(view) ? 'active' : ''}`} 
+                onClick={() => setView('list')}
+              >
+                New Sales
+              </button>
+              <button 
+                className={`submenu-btn ${view === 'invoices' ? 'active' : ''}`} 
+                onClick={handleViewSalesList}
+              >
+                Sales List
+              </button>
+            </div>
+          )}
+        </div>
+        
+        <button 
+          className={`menu-btn ${view === 'inventory' ? 'active' : ''}`} 
+          onClick={() => setView('inventory')}
+        >
+          Inventory
+        </button>
+        <button 
+          className={`menu-btn ${view === 'customers-manage' ? 'active' : ''}`} 
+          onClick={() => setView('customers-manage')}
+        >
+          Manage Customers
+        </button>
+        <button 
+          className={`menu-btn ${view === 'products' ? 'active' : ''}`} 
+          onClick={() => setView('products')}
+        >
+          Manage Products
+        </button>
+
+        {/* LOGOUT BUTTON ADDED HERE */}
+        <div className="sidebar-footer">
+          <button 
+            className="btn btn-danger w-100" 
+            onClick={() => {
+              setIsLoggedIn(false);
+              setUsername('');
+              setPassword('');
+            }}
+          >
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <main className="main-content">
+        
+        {error && (
+          <div className="text-danger mb-0">{error}</div>
+        )}
+
+        {/* =========================================
+            VIEW 1: COMBINED SHOPPING LIST
+            ========================================= */}
+        {view === 'list' && (
+          <div>
+            {/* Control Panel (Customer & Product Search) */}
+            <div className="sales-control-panel">
+              <div className="sales-control-row">
+                
+                {/* Customer Input Group */}
+                <div className="input-group customer-dropdown-group">
+                  <label>Select Customer</label>
+                  <div className="dropdown-container">
+                    <input 
+                      type="text" 
+                      className={`form-control mb-0 ${!activeCustomer ? 'customer-input-warning' : ''}`}
+                      placeholder="Search or select customer..." 
+                      value={customerSearch} 
+                      onFocus={() => setIsDropdownOpen(true)} 
+                      onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                      onChange={e => { 
+                        setCustomerSearch(e.target.value)
+                        setIsDropdownOpen(true)
+                        setActiveCustomer(null) 
+                      }}
+                    />
+                    {isDropdownOpen && (
+                      <ul className="dropdown-menu">
+                        {dropdownFilteredCustomers.length > 0 ? dropdownFilteredCustomers.map(c => (
+                          <li 
+                            key={c.id} 
+                            className="dropdown-item" 
+                            onMouseDown={() => { 
+                              setActiveCustomer(c)
+                              setCustomerSearch(c.name)
+                              setIsDropdownOpen(false) 
+                            }}
+                          >
+                            {c.name}
+                          </li>
+                        )) : (
+                          <li className="dropdown-empty">No customers found</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                {/* Product Search Group */}
+                <div className="input-group">
+                  <label>Search Products</label>
+                  <input 
+                    type="text" 
+                    className="form-control mb-0" 
+                    placeholder="Search by product name..." 
+                    value={searchQuery} 
+                    onChange={e => setSearchQuery(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div className="sales-control-row">
+                <div className="action-buttons-right">
+                  <button className="btn btn-danger" onClick={cancelSale}>
+                    Cancel Sale
+                  </button>
+                  <button className="btn btn-warning" onClick={() => setView('cart')}>
+                    View Cart ({cart.reduce((total, item) => total + item.quantity, 0)})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Blocks Table */}
+            <div className="table-responsive">
+              <table className="block-table data-table">
+                <thead>
+                  <tr>
+                    <th className="col-product-name">Product Name</th>
+                    <th>Selling Price</th>
+                    <th>Available Stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.map(product => {
+                    const cartItem = cart.find(c => c.id === product.id)
+                    const inCartQty = cartItem ? cartItem.quantity : 0
+                    const availableStock = product.stock - inCartQty
+                    const isOutOfStock = availableStock <= 0
+
+                    return (
+                      <tr 
+                        key={product.id} 
+                        className={`product-row ${isOutOfStock ? 'out-of-stock' : 'available'}`}
+                        onClick={() => { 
+                          if (!isOutOfStock) addToCart(product) 
+                        }}
+                        title={isOutOfStock ? 'Out of stock' : 'Click block to add to cart'}
+                      >
+                        <td className="col-product-name cell-padded">
+                          {product.name}
+                        </td>
+                        <td className="price-text cell-padded">
+                          {product.price} rs
+                        </td>
+                        <td className={`fw-bold cell-padded ${isOutOfStock ? 'text-danger' : 'text-success'}`}>
+                          {isOutOfStock ? 'Out of Stock' : `${availableStock} Units`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================
+            VIEW 2: SHOPPING CART
+            ========================================= */}
+        {view === 'cart' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title">
+                Cart - {activeCustomer ? activeCustomer.name : <span className="text-danger">No Customer Selected</span>}
+              </h2>
+              <button 
+                className="btn btn-secondary action-buttons-right" 
+                onClick={() => setView('list')}
+              >
+                Back to Products
+              </button>
+            </div>
+            
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Price</th>
+                    <th>Quantity</th>
+                    <th>Total</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.length ? cart.map((item, idx) => (
                     <tr key={`${item.id}-${idx}`}>
-                      <td>{item.name}</td>
-                      <td>{item.price}rs</td>
+                      <td>
+                        {item.name} 
+                        <span className="text-dark-muted fs-sm"> (Max: {item.stock})</span>
+                      </td>
+                      <td>{item.price} rs</td>
                       <td>
                         <input
-                          type="number"
-                          className="quantity-input"
-                          min="1"
-                          value={item.quantity}
-                          onChange={e => updateQuantity(idx, Number(e.target.value))}
+                          type="number" 
+                          className="quantity-input form-control" 
+                          min="1" 
+                          max={item.stock} 
+                          value={item.quantity} 
+                          onChange={e => updateQuantity(idx, Number(e.target.value))} 
                         />
                       </td>
-                      <td>{item.price * item.quantity}rs</td>
+                      <td className="price-text">{item.price * item.quantity} rs</td>
                       <td>
-                        <button className="remove-btn" onClick={() => removeCartItem(idx)}>
+                        <button className="btn btn-danger" onClick={() => removeCartItem(idx)}>
                           Remove
                         </button>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="empty-row">
-                      Your cart is empty.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <h3 id="cart-total">Total: {cartTotal}rs</h3>
-          <div className="cart-actions">
-            <button onClick={submitCart}>Submit</button>
-          </div>
-          {invoiceMessage && <p className="invoice-details">{invoiceMessage}</p>}
-        </>
-      )}
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">Cart is empty.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* CLEAN RECEIPT SUMMARY */}
+            <div className="receipt-wrapper">
+              <div className="receipt-panel">
+                <h3 className="receipt-header">Bill Summary</h3>
+                
+                <div className="receipt-row">
+                  <span className="fw-bold">Gross Total:</span>
+                  <span>{billingDetails.grossTotal.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-row">
+                  <span className="fw-bold">Discount (%):</span>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    max="100" 
+                    value={discountPercent} 
+                    onChange={e => setDiscountPercent(Number(e.target.value))} 
+                    className="form-control discount-input" 
+                  />
+                </div>
 
-      {view === 'invoices' && (
-        <>
-          <h2>Invoices</h2>
-          <button className="back-button" onClick={() => setView('products')}>
-            Back to Product Management
-          </button>
-          <div className="table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>Invoice ID</th>
-                  <th>Customer Name</th>
-                  <th>Total Amount (rs)</th>
-                  <th>Order Date</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.length ? (
-                  invoices.map(invoice => (
+                {billingDetails.discountAmount > 0 && (
+                  <div className="receipt-row highlight-red">
+                    <span>Discount Applied:</span>
+                    <span>-{billingDetails.discountAmount.toFixed(2)} rs</span>
+                  </div>
+                )}
+                
+                <div className="receipt-row">
+                  <span>CGST (2.5%):</span>
+                  <span>+{billingDetails.cgst.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-row">
+                  <span>SGST (2.5%):</span>
+                  <span>+{billingDetails.sgst.toFixed(2)} rs</span>
+                </div>
+                
+                <div className="receipt-total">
+                  <span>Final Total:</span>
+                  <span className="text-success">{billingDetails.finalTotal.toFixed(2)} rs</span>
+                </div>
+
+                <button className="btn btn-success btn-checkout" onClick={submitCart}>
+                  Complete Sale
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================
+            VIEW 3: SALES LIST
+            ========================================= */}
+        {view === 'invoices' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Sales List</h2>
+              <input 
+                type="text" 
+                className="form-control header-search" 
+                placeholder="Search by Bill ID or Customer..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+            </div>
+            
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Bill ID</th>
+                    <th>Customer Name</th>
+                    <th>Final Total (rs)</th>
+                    <th>Date</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedInvoices.length ? paginatedInvoices.map(invoice => (
                     <tr key={invoice.id}>
                       <td>#{invoice.id}</td>
                       <td>{invoice.customerName}</td>
-                      <td>{invoice.totalAmount}</td>
+                      <td className="price-text text-success fw-bold">
+                        {invoice.finalTotal || invoice.totalAmount}
+                      </td>
                       <td>{new Date(invoice.orderDate).toLocaleString()}</td>
                       <td>
-                        <button
-                          className="view-btn"
+                        <button 
+                          className="btn btn-secondary" 
                           onClick={() => handleViewInvoiceDetails(invoice.id)}
                         >
                           View Details
                         </button>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="empty-row">
-                      No invoices found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {selectedInvoice && (
-            <div className="invoice-details-panel">
-              <h3>Invoice #${selectedInvoice.id} Details</h3>
-              <div className="invoice-info">
-                <p><strong>Customer Name:</strong> {selectedInvoice.customerName}</p>
-                <p><strong>Order Date:</strong> {new Date(selectedInvoice.orderDate).toLocaleString()}</p>
-                <p><strong>Total Amount:</strong> {selectedInvoice.totalAmount} rs</p>
-              </div>
-              <h4>Items</h4>
-              <div className="invoice-items-table">
-                <table>
-                  <thead>
+                  )) : (
                     <tr>
-                      <th>Product Name</th>
-                      <th>Price</th>
-                      <th>Quantity</th>
-                      <th>Total</th>
+                      <td colSpan={5} className="empty-state">No sales found.</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {selectedInvoice.items && selectedInvoice.items.length ? (
-                      selectedInvoice.items.map((item, idx) => (
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {renderPagination(filteredInvoices.length)}
+
+            {/* Sales Details Modal (Inline) */}
+            {selectedInvoice && (
+              <div className="card invoice-details-card mb-4">
+                <h3 className="modal-header-title">Sale #{selectedInvoice.id} Details</h3>
+                
+                {/* --- VERTICAL INFO BLOCKS FOR CUSTOMER DETAILS --- */}
+                <div className="invoice-summary-grid">
+                  <div className="info-block">
+                    <span className="info-label">Customer</span>
+                    <strong className="info-value">{selectedInvoice.customerName}</strong>
+                  </div>
+                  <div className="info-block">
+                    <span className="info-label">Date & Time</span>
+                    <strong className="info-value">{new Date(selectedInvoice.orderDate).toLocaleString()}</strong>
+                  </div>
+                </div>
+
+                <h4>Items Purchased</h4>
+                <div className="table-responsive mb-3">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedInvoice.items?.map((item, idx) => (
                         <tr key={idx}>
                           <td>{item.product.name}</td>
                           <td>{item.price}</td>
                           <td>{item.quantity}</td>
                           <td>{item.price * item.quantity}</td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4} className="empty-row">
-                          No items in this invoice.
-                        </td>
-                      </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Vertical Math Details */}
+                <div className="invoice-math-wrapper">
+                  <div className="invoice-math-box receipt-panel">
+                    <div className="receipt-row">
+                      <strong>Gross Total:</strong>
+                      <span>{selectedInvoice.grossTotal || selectedInvoice.totalAmount} rs</span>
+                    </div>
+                    
+                    {selectedInvoice.discountPercent > 0 && (
+                      <div className="receipt-row highlight-red">
+                        <span>Discount ({selectedInvoice.discountPercent}%):</span>
+                        <span>-{ (selectedInvoice.grossTotal * selectedInvoice.discountPercent / 100).toFixed(2) } rs</span>
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                    
+                    {selectedInvoice.cgst > 0 && (
+                      <div className="receipt-row">
+                        <span>CGST (2.5%):</span>
+                        <span>+{selectedInvoice.cgst} rs</span>
+                      </div>
+                    )}
+                    
+                    {selectedInvoice.sgst > 0 && (
+                      <div className="receipt-row">
+                        <span>SGST (2.5%):</span>
+                        <span>+{selectedInvoice.sgst} rs</span>
+                      </div>
+                    )}
+                    
+                    <div className="receipt-total">
+                      <span>Final Total:</span>
+                      <span className="text-success">{selectedInvoice.finalTotal || selectedInvoice.totalAmount} rs</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => setSelectedInvoice(null)} 
+                  className="btn btn-secondary mt-3" 
+                >
+                  Close View
+                </button>
               </div>
-              <button onClick={() => setSelectedInvoice(null)} className="close-btn">
-                Close Details
+            )}
+          </div>
+        )}
+
+        {/* =========================================
+            VIEW 4: INVENTORY MANAGEMENT
+            ========================================= */}
+        {view === 'inventory' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Inventory</h2>
+              <input 
+                type="text" 
+                className="form-control header-search" 
+                placeholder="Search products..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+            </div>
+            
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product Name</th>
+                    <th>Current Stock</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedProducts.length ? paginatedProducts.map((product, index) => (
+                    <tr key={product.id}>
+                      <td>{indexOfFirstItem + index + 1}</td>
+                      <td>{product.name}</td>
+                      <td className={`fw-bold fs-lg ${product.stock > 10 ? 'text-success' : (product.stock > 0 ? 'text-warning' : 'text-danger')}`}>
+                        {product.stock} {product.stock <= 0 && '(Out of Stock)'}
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-warning" 
+                          onClick={() => openInventoryModal(product)}
+                        >
+                          Update Stock
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={4} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {renderPagination(filteredProducts.length)}
+          </div>
+        )}
+
+        {/* =========================================
+            VIEW 5: MANAGE CUSTOMERS
+            ========================================= */}
+        {view === 'customers-manage' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Customer Management</h2>
+              <input 
+                type="text" 
+                className="form-control header-search search-expanded" 
+                placeholder="Search name, phone, GST, city..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+              <button 
+                className="btn btn-primary" 
+                onClick={() => { 
+                  setIsCustomerEditMode(false)
+                  setCustomerForm({ name: '', gstno: '', mobile: '', city: '' })
+                  setShowCustomerModal(true) 
+                }}
+              >
+                + Add New Customer
               </button>
             </div>
-          )}
-        </>
-      )}
+            
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Customer Name</th>
+                    <th>GST No</th>
+                    <th>Mobile</th>
+                    <th>City</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedCustomers.length ? paginatedCustomers.map((c, index) => (
+                    <tr key={c.id}>
+                      <td>{indexOfFirstItem + index + 1}</td>
+                      <td>{c.name}</td>
+                      <td>{c.gstno}</td>
+                      <td>{c.mobile}</td>
+                      <td>{c.city}</td>
+                      <td>
+                        <div className="btn-group">
+                          <button 
+                            className="btn btn-warning" 
+                            onClick={() => { 
+                              setIsCustomerEditMode(true)
+                              setEditingCustomerId(c.id)
+                              setCustomerForm({ 
+                                name: c.name, 
+                                gstno: c.gstno || '', 
+                                mobile: c.mobile || '', 
+                                city: c.city || '' 
+                              })
+                              setShowCustomerModal(true) 
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={() => handleDeleteCustomer(c.id, c.name)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={6} className="empty-state">No customers found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {renderPagination(filteredCustomers.length)}
+          </div>
+        )}
 
+        {/* =========================================
+            VIEW 6: MANAGE PRODUCTS
+            ========================================= */}
+        {view === 'products' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Product Details</h2>
+              <input 
+                type="text" 
+                className="form-control header-search search-expanded" 
+                placeholder="Search products..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+              <button 
+                className="btn btn-primary" 
+                onClick={() => { 
+                  setIsEditMode(false)
+                  setProductForm({ name: '', purchasePrice: '', price: '', stock: '' })
+                  setShowProductModal(true) 
+                }}
+              >
+                + Add New Product
+              </button>
+            </div>
+            
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product Name</th>
+                    <th>Purchase Price (rs)</th>
+                    <th>Selling Price (rs)</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedProducts.length ? paginatedProducts.map((product, index) => (
+                    <tr key={product.id}>
+                      <td>{indexOfFirstItem + index + 1}</td>
+                      <td>{product.name}</td>
+                      <td className="price-text text-warning">{product.purchasePrice || 0} rs</td>
+                      <td className="price-text">{product.price} rs</td>
+                      <td>
+                        <div className="btn-group">
+                          <button 
+                            className="btn btn-warning" 
+                            onClick={() => { 
+                              setIsEditMode(true)
+                              setEditingProductId(product.id)
+                              setProductForm({ 
+                                name: product.name, 
+                                purchasePrice: product.purchasePrice ? product.purchasePrice.toString() : '0', 
+                                price: product.price.toString(), 
+                                stock: product.stock.toString() 
+                              })
+                              setShowProductModal(true) 
+                            }}
+                          >
+                            Edit Details
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={() => handleDeleteProduct(product.id, product.name)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">No products found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {renderPagination(filteredProducts.length)}
+          </div>
+        )}
+      </main>
+
+      {/* =========================================
+          GLOBAL MODALS (Popups)
+          ========================================= */}
+
+      {/* Inventory Modal */}
+      {showInventoryModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-header-title">Update Inventory</h3>
+            <p className="text-dark-muted form-group">
+              Updating stock for: <strong>{products.find(p => p.id === editingInventoryId)?.name}</strong>
+            </p>
+            
+            <div className="form-group">
+              <label className="form-label">New Total Stock:</label>
+              <input 
+                type="number" 
+                className="form-control" 
+                value={inventoryForm.stock} 
+                onChange={e => setInventoryForm({ stock: e.target.value })} 
+                min="0" 
+              />
+            </div>
+            
+            <div className="modal-actions">
+              <button onClick={closeInventoryModal} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleSaveInventory} className="btn btn-success">Save Stock</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Product Modal */}
       {showProductModal && (
         <div className="modal-overlay">
-          <div className="modal">
-            <h3>{isEditMode ? 'Edit Product' : 'Add New Product'}</h3>
-            <div className="modal-content">
-              <div className="form-group">
-                <label htmlFor="productName">Product Name:</label>
-                <input
-                  type="text"
-                  id="productName"
-                  value={productForm.name}
-                  onChange={e => setProductForm({ ...productForm, name: e.target.value })}
-                  placeholder="Enter product name"
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="productPrice">Price (rs):</label>
-                <input
-                  type="number"
-                  id="productPrice"
-                  value={productForm.price}
-                  onChange={e => setProductForm({ ...productForm, price: e.target.value })}
-                  placeholder="Enter price"
-                  min="0"
-                  step="0.01"
-                />
-              </div>
+          <div className="modal-content">
+            <h3 className="modal-header-title">{isEditMode ? 'Edit Product Details' : 'Add New Product'}</h3>
+            
+            <div className="form-group">
+              <label className="form-label">Name:</label>
+              <input 
+                className="form-control" 
+                value={productForm.name} 
+                onChange={e => setProductForm({ ...productForm, name: e.target.value })} 
+              />
             </div>
+            
+            <div className="form-group">
+              <label className="form-label">Purchase Price (rs):</label>
+              <input 
+                type="number" 
+                className="form-control" 
+                value={productForm.purchasePrice} 
+                onChange={e => setProductForm({ ...productForm, purchasePrice: e.target.value })} 
+              />
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">Selling Price (rs):</label>
+              <input 
+                type="number" 
+                className="form-control" 
+                value={productForm.price} 
+                onChange={e => setProductForm({ ...productForm, price: e.target.value })} 
+              />
+            </div>
+            
+            {!isEditMode && (
+              <div className="form-group">
+                <label className="form-label">Initial Stock:</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={productForm.stock} 
+                  onChange={e => setProductForm({ ...productForm, stock: e.target.value })} 
+                />
+              </div>
+            )}
+            
             <div className="modal-actions">
-              <button onClick={handleSaveProduct} className="save-btn">
-                {isEditMode ? 'Update Product' : 'Add Product'}
-              </button>
-              <button onClick={closeProductModal} className="cancel-btn">
-                Cancel
-              </button>
+              <button onClick={closeProductModal} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleSaveProduct} className="btn btn-success">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Modal */}
+      {showCustomerModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-header-title">{isCustomerEditMode ? 'Edit Customer' : 'Add New Customer'}</h3>
+            
+            <div className="form-group">
+              <label className="form-label">Customer Name:</label>
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.name} 
+                onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })} 
+                placeholder="Enter customer name" 
+              />
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">GST No:</label>
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.gstno} 
+                onChange={e => setCustomerForm({ ...customerForm, gstno: e.target.value })} 
+                placeholder="Enter GST Number" 
+              />
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">Mobile:</label>
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.mobile} 
+                onChange={e => setCustomerForm({ ...customerForm, mobile: e.target.value })} 
+                placeholder="Enter Mobile Number" 
+              />
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">City:</label>
+              <input 
+                type="text" 
+                className="form-control" 
+                value={customerForm.city} 
+                onChange={e => setCustomerForm({ ...customerForm, city: e.target.value })} 
+                placeholder="Enter City" 
+              />
+            </div>
+            
+            <div className="modal-actions">
+              <button onClick={closeCustomerModal} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleSaveCustomer} className="btn btn-success">Save</button>
             </div>
           </div>
         </div>

@@ -10,26 +10,31 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "products")
 public class Product {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(nullable = false)
     private String name;
-    
+
     @Column(nullable = false)
     private Double price;
-    
-    @Column(name = "quantity")
-    private Integer quantity = 0;
+
+    @Column(nullable = false)
+    private Double purchasePrice;
+
+    // THIS IS THE INVENTORY FIELD THAT WAS MISSING
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private Integer stock; 
 
     public Product() {
     }
 
-    public Product(String name, Double price) {
+    public Product(String name, Double price, Integer stock) {
         this.name = name;
         this.price = price;
+        this.stock = stock;
     }
 
     public Long getId() {
@@ -56,13 +61,20 @@ public class Product {
         this.price = price;
     }
 
-    public Integer getQuantity() {
-        return quantity;
+    // THESE METHODS FIX YOUR EXACT ERROR
+    public Integer getStock() {
+        return stock;
     }
 
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
+    public void setStock(Integer stock) {
+        this.stock = stock;
     }
+
+    public Double getPurchasePrice() {
+        return purchasePrice;
+    }
+    public void setPurchasePrice(Double purchasePrice) {
+        this.purchasePrice = purchasePrice;
+    }
+    
 }
-
-

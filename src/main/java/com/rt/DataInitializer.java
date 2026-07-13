@@ -12,13 +12,12 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // Add sample products if the database is empty
         if (productRepository.count() == 0) {
-            productRepository.save(new Product("VEST", 100.0));
-            productRepository.save(new Product("BRIEF", 150.0));
-            productRepository.save(new Product("SHIRT", 50.0));
-            productRepository.save(new Product("PANTS", 80.0));
-            System.out.println("Sample products added to database!");
+            // Adding products with Name, Price, AND initial Stock!
+            productRepository.save(new Product("VESTS", 120.0, 50));
+            productRepository.save(new Product("BRIEF", 320.0, 30));
+            productRepository.save(new Product("SHIRT", 850.0, 15));
+            productRepository.save(new Product("PANTS", 1000.0, 20));
         }
     }
 }

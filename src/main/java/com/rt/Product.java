@@ -61,7 +61,7 @@ public class Product {
         this.price = price;
     }
 
-    // THESE METHODS FIX YOUR EXACT ERROR
+    
     public Integer getStock() {
         return stock;
     }

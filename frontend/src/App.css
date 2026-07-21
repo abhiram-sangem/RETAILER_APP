@@ -41,6 +41,11 @@ body, html, #root {
   z-index: 10;
 }
 
+.flex-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
 .sidebar-header {
   padding: 1.5rem;
   font-size: 1.5rem;
@@ -109,6 +114,12 @@ body, html, #root {
   border-left: 4px solid #38bdf8;
 }
 
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1.5rem;
+  border-top: 1px solid #1e293b;
+}
+
 /* --- Cards & Panels --- */
 .card {
   background-color: #ffffff;
@@ -137,9 +148,10 @@ body, html, #root {
   color: #38bdf8;
 }
 
-.text-center {
-  text-align: center;
-}
+/* --- Utility Alignments --- */
+.text-center { text-align: center; display: block; }
+.text-right { text-align: right; display: block; }
+.w-100 { width: 100%; }
 
 /* --- Buttons --- */
 .btn {
@@ -167,10 +179,7 @@ body, html, #root {
 .btn-secondary { background-color: #64748b; color: white; }
 .btn-secondary:hover { background-color: #475569; }
 
-.btn-group {
-  display: flex;
-  gap: 0.8rem;
-}
+.btn-group { display: flex; gap: 0.8rem; }
 
 /* --- Forms & Inputs --- */
 .form-container {
@@ -202,15 +211,10 @@ body, html, #root {
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
 }
 
-.help-text {
-  color: #64748b;
-  font-size: 0.9rem;
-  margin-bottom: 1.5rem;
-}
-
 /* --- Tables --- */
 .table-responsive {
-  overflow-x: auto;
+  overflow-x: visible;
+  margin-top: 1rem;
 }
 
 .data-table {
@@ -245,44 +249,6 @@ body, html, #root {
   color: #94a3b8;
 }
 
-/* --- Product Grid --- */
-.product-grid {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1.5rem;
-  padding: 0;
-}
-
-.product-card {
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 1.5rem;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.product-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-}
-
-.product-info {
-  text-align: center;
-  margin-bottom: 1.2rem;
-}
-
-.product-name {
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: #0f172a;
-  margin-bottom: 0.5rem;
-}
-
 /* --- Cart Specific --- */
 .quantity-input {
   width: 70px;
@@ -292,42 +258,37 @@ body, html, #root {
   border-radius: 4px;
 }
 
-.cart-summary {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 2px dashed #e2e8f0;
-}
-
-.grand-total {
-  font-size: 1.8rem;
-  color: #0f172a;
-}
-
-/* --- Modals --- */
-.modal-overlay {
+/* --- Modals & Login --- */
+.modal-overlay, .login-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(15, 23, 42, 0.6);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 100;
+}
+
+.modal-overlay {
+  background-color: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(4px);
 }
 
-.modal-content {
+.login-overlay {
+  background-color: #f1f5f9;
+  backdrop-filter: none;
+}
+
+.modal-content, .login-card {
   background-color: white;
   padding: 2rem;
   border-radius: 12px;
-  width: 90%;
+  width: 100%;
   max-width: 450px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  margin: 0 auto;
 }
 
 .modal-content h3 {
@@ -344,6 +305,13 @@ body, html, #root {
   margin-top: 1.5rem;
 }
 
+.modal-header-title {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #0f172a;
+}
+
+.form-group { margin-bottom: 1rem; }
 
 /* --- Header & Search Bar --- */
 .header-actions {
@@ -391,100 +359,14 @@ body, html, #root {
   border-bottom: 1px solid #f1f5f9;
   color: #0f172a;
 }
-.dropdown-item:hover {
-  background-color: #f1f5f9;
-}
-.dropdown-empty {
-  padding: 0.8rem;
-  color: #94a3b8;
-}
+.dropdown-item:hover { background-color: #f1f5f9; }
+.dropdown-empty { padding: 0.8rem; color: #94a3b8; }
 
-/* --- Clickable Sales List Rows --- */
-.product-row {
-  transition: background-color 0.2s;
-  border-bottom: 1px solid #e2e8f0;
-}
-.product-row.available {
-  cursor: pointer;
-}
-.product-row.available:hover {
-  background-color: #f1f5f9;
-}
-.product-row.out-of-stock {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.cell-padded {
-  padding: 1rem 0.5rem;
-}
-.col-product-name {
-  width: 40%;
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-.col-action {
-  text-align: right;
-}
-.text-add {
-  color: #3b82f6;
-  font-weight: bold;
-  font-size: 0.9rem;
-}
-
-/* --- Invoice Details Modal --- */
-.invoice-details-card {
-  margin-top: 2rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: none;
-}
-.invoice-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.invoice-total {
-  font-size: 1.2rem;
-}
-
-/* --- Pagination Controls --- */
-.pagination-wrapper {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e2e8f0;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-.pagination-info {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
-.pagination-text {
-  font-size: 0.9rem;
-  color: #64748b;
-}
-
-/* --- Utility / Status Colors --- */
-.text-success { color: #10b981; }
-.text-danger { color: #ef4444; }
-.text-warning { color: #f59e0b; }
-.text-muted { color: #94a3b8; }
-.text-dark-muted { color: #64748b; }
-.fw-bold { font-weight: bold; }
-.fs-lg { font-size: 1.1rem; }
-.fs-sm { font-size: 0.8rem; }
-.mb-0 { margin-bottom: 0; }
-.mt-0 { margin-top: 0; }
-
-/* --- Horizontal Block Layout for Sales List --- */
+/* --- Clickable Sales List Rows (Block Table) --- */
 .block-table {
   width: 100%;
   border-collapse: separate !important;
-  border-spacing: 0 0.8rem !important; /* This creates the gap between blocks */
+  border-spacing: 0 0.8rem !important;
 }
 
 .block-table thead th {
@@ -501,10 +383,11 @@ body, html, #root {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
   border-radius: 8px;
   transition: transform 0.2s, box-shadow 0.2s;
-  border-bottom: none; /* Remove the old solid line */
 }
 
-/* 3D lift effect on hover instead of turning grey */
+.block-table .product-row.available { cursor: pointer; }
+.block-table .product-row.out-of-stock { cursor: not-allowed; opacity: 0.5; }
+
 .block-table .product-row:hover.available {
   transform: translateY(-2px);
   box-shadow: 0 8px 12px rgba(0, 0, 0, 0.08);
@@ -516,7 +399,6 @@ body, html, #root {
   padding: 1.2rem 1rem !important;
 }
 
-/* Ensure the background and borders curve smoothly around the edges */
 .block-table td:first-child {
   border-top-left-radius: 8px;
   border-bottom-left-radius: 8px;
@@ -536,6 +418,9 @@ body, html, #root {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.cell-padded { padding: 1rem 0.5rem; }
+.col-product-name { width: 40%; font-weight: 600; font-size: 1.1rem; }
+
 /* --- Sales Control Panel (Top Header) --- */
 .sales-control-panel {
   background-color: white;
@@ -545,7 +430,7 @@ body, html, #root {
   margin-bottom: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem; /* Vertical spacing between rows */
+  gap: 1.5rem;
 }
 
 .sales-control-row {
@@ -569,32 +454,130 @@ body, html, #root {
   font-size: 0.95rem;
 }
 
-.input-group input, 
-.input-group .dropdown-container {
-  width: 100%;
-}
+.input-group input, .input-group .dropdown-container { width: 100%; }
+.customer-input-warning { border-color: #f59e0b; background-color: #fffbeb; }
+.action-buttons-right { margin-left: auto; display: flex; gap: 0.5rem; }
 
-/* Customer Select Alert State */
-.customer-input-warning {
-  border-color: #f59e0b;
-  background-color: #fffbeb;
-}
-
-.action-buttons-right {
-  margin-left: auto;
-  display: flex;
-  gap: 0.5rem;
-}
-
-/* --- Receipt Summary Panel --- */
-.receipt-wrapper {
-  display: flex;
-  justify-content: center;
+/* --- Invoice Details Modals & Views --- */
+.invoice-details-card {
   margin-top: 2rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+}
+
+.invoice-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.info-block { display: flex; flex-direction: column; gap: 0.3rem; }
+.info-label { color: #64748b; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.info-value { font-size: 1.1rem; color: #0f172a; }
+
+.details-header-split { display: flex; justify-content: space-between; align-items: flex-start; }
+.software-entry-stamp { text-align: right; font-size: 0.85rem; color: #94a3b8; }
+.bill-blue { color: #0284c7; }
+.section-title-spacing { margin-bottom: 1rem; margin-top: 1.5rem; }
+.table-margin-bottom { margin-bottom: 2rem; }
+.font-weight-medium { font-weight: 500; }
+.margin-top-large { margin-top: 2.5rem; }
+.close-btn-padding { margin-top: 2rem; padding: 0.8rem; }
+
+/* --- Pagination Controls --- */
+.pagination-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.pagination-info { display: flex; gap: 1rem; align-items: center; }
+.pagination-text { font-size: 0.9rem; color: #64748b; }
+
+/* --- Utility / Status Colors --- */
+.text-success { color: #10b981; }
+.text-danger { color: #ef4444; }
+.text-warning { color: #f59e0b; }
+.text-muted { color: #94a3b8; }
+.text-dark-muted { color: #64748b; }
+.fw-bold { font-weight: bold; }
+.fs-lg { font-size: 1.1rem; }
+.fs-sm { font-size: 0.8rem; }
+.mb-0 { margin-bottom: 0; }
+.mt-0 { margin-top: 0; }
+.text-primary { color: #38bdf8; font-weight: 700; }
+.text-purple { color: #8b5cf6; font-weight: 700; }
+.text-amber { color: #f59e0b; font-weight: 700; }
+
+/* =========================================
+   --- Dashboard Home Screen Styles ---
+   ========================================= */
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  margin-top: 1.5rem;
+}
+
+.stat-card {
+  padding: 1.5rem;
+  border-top: 4px solid #cbd5e1;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-card h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #0f172a;
+  font-size: 1.15rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.8rem;
+}
+
+.daily-card { border-top-color: #10b981; }
+.weekly-card { border-top-color: #38bdf8; }
+.monthly-card { border-top-color: #8b5cf6; }
+.yearly-card { border-top-color: #f59e0b; }
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  flex-grow: 1;
+}
+
+.summary-table td {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.summary-table tr:last-child td { border-bottom: none; }
+
+/* =========================================
+   --- END-TO-END RECEIPT SUMMARY GRID ---
+   ========================================= */
+
+/* Force wrappers to full width */
+.receipt-wrapper,
+.invoice-math-wrapper,
+.receipt-panel,
+.summary-box-width {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  display: block;
 }
 
 .receipt-panel {
-  width: 350px;
   background-color: #f8fafc;
   padding: 1.5rem;
   border-radius: 8px;
@@ -609,32 +592,42 @@ body, html, #root {
   color: #0f172a;
 }
 
-.receipt-row {
-  display: flex;
-  justify-content: space-between;
+/* 3 Equal Columns */
+.receipt-three-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   align-items: center;
-  margin-bottom: 0.8rem;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px dashed #e2e8f0;
   color: #64748b;
 }
 
-.receipt-row.highlight-red {
-  color: #ef4444;
-}
+.receipt-three-col.highlight-red { color: #ef4444; }
 
-.receipt-total {
-  display: flex;
-  justify-content: space-between;
-  border-top: 2px dashed #cbd5e1;
-  padding-top: 1rem;
+/* Remove bottom border for the final total row, add thick top border */
+.receipt-total.receipt-three-col {
+  border-bottom: none;
+  border-top: 2px solid #cbd5e1;
+  padding-top: 1.2rem;
   font-size: 1.2rem;
   font-weight: bold;
   color: #0f172a;
 }
 
-.discount-input {
-  width: 80px;
-  text-align: right;
+/* Perfect centering for inputs in the middle column */
+.input-with-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  margin: 0 auto;
+}
+
+.input-with-symbol input {
   margin-bottom: 0;
+  width: 80px;
+  text-align: center;
 }
 
 .btn-checkout {
@@ -642,85 +635,4 @@ body, html, #root {
   margin-top: 1.5rem;
   padding: 0.8rem;
   font-size: 1.1rem;
-}
-
-/* --- Modal Form Groups --- */
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.modal-header-title {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  color: #0f172a;
-}
-
-/* --- Invoice Details Modal Specifics --- */
-.invoice-math-wrapper {
-  display: flex;
-  justify-content: center;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 1rem;
-  
-}
-
-.invoice-math-box {
-  width: 280px;
-}
-
-/* Fix table overlaps */
-.table-responsive {
-  overflow-x: visible;
-  margin-top: 1rem;
-}
-
-
-/* --- Vertical Info Blocks --- */
-.info-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.info-label {
-  color: #64748b;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-}
-
-.info-value {
-  font-size: 1.1rem;
-  color: #0f172a;
-}
-
-/* =========================================
-   --- Added for Login & Logout --- 
-   ========================================= */
-
-.login-overlay {
-  background-color: #f1f5f9; /* Matches your body color to look like a full page */
-  backdrop-filter: none;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.flex-sidebar {
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  padding: 1.5rem;
-  border-top: 1px solid #1e293b;
-}
-
-.w-100 {
-  width: 100%;
 }

@@ -1,12 +1,19 @@
 package com.rt;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @RestController
 @RequestMapping("/api/purchase-invoices")
@@ -25,58 +32,70 @@ public class PurchaseInvoiceController {
 
     @GetMapping("/{id}")
     public PurchaseInvoice getPurchaseInvoiceById(@PathVariable Long id) {
-        return purchaseInvoiceRepository.findById(id).orElseThrow(() -> new RuntimeException("Purchase Invoice not found"));
+        return purchaseInvoiceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Purchase Invoice not found"));
     }
 
     @PostMapping
     public PurchaseInvoice createPurchaseInvoice(@RequestBody PurchaseInvoiceRequest request) {
-        PurchaseInvoice invoice = new PurchaseInvoice();
-        invoice.setCustomInvoiceId(request.getCustomInvoiceId());
-        invoice.setSellerName(request.getSellerName());
-        
-        if (request.getPurchaseDate() != null && !request.getPurchaseDate().isEmpty()) {
-            invoice.setPurchaseDate(LocalDate.parse(request.getPurchaseDate()));
-        }
-        
-        invoice.setEntryDate(LocalDateTime.now()); 
-        invoice.setGrossTotal(request.getGrossTotal());
-        invoice.setDiscountPercent(request.getDiscountPercent());
-        invoice.setCgst(request.getCgst());
-        invoice.setSgst(request.getSgst());
-        invoice.setFinalTotal(request.getFinalTotal());
-
-        List<PurchaseInvoiceItem> items = new ArrayList<>();
-        
-        for (PurchaseInvoiceRequest.ItemRequest itemReq : request.getItems()) {
-            Product product = productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found"));
-
-            int currentStock = product.getStock() == null ? 0 : product.getStock();
-            product.setStock(currentStock + itemReq.getQuantity());
+        try {
+            PurchaseInvoice invoice = new PurchaseInvoice();
+            invoice.setCustomInvoiceId(request.getCustomInvoiceId());
+            invoice.setSellerName(request.getSellerName());
             
-            if (itemReq.getPurchasePrice() != null) {
-                product.setPurchasePrice(itemReq.getPurchasePrice());
+            // Safely parse purchase date from frontend
+            if (request.getPurchaseDate() != null && !request.getPurchaseDate().trim().isEmpty()) {
+                invoice.setPurchaseDate(LocalDate.parse(request.getPurchaseDate().trim()));
+            } else {
+                invoice.setPurchaseDate(LocalDate.now());
             }
             
-            productRepository.save(product);
+            invoice.setEntryDate(LocalDateTime.now());
+            invoice.setGrossTotal(request.getGrossTotal() != null ? request.getGrossTotal() : 0.0);
+            invoice.setDiscountPercent(request.getDiscountPercent() != null ? request.getDiscountPercent() : 0.0);
+            invoice.setCgst(request.getCgst() != null ? request.getCgst() : 0.0);
+            invoice.setSgst(request.getSgst() != null ? request.getSgst() : 0.0);
+            invoice.setFinalTotal(request.getFinalTotal() != null ? request.getFinalTotal() : 0.0);
 
-            PurchaseInvoiceItem item = new PurchaseInvoiceItem();
-            item.setProduct(product);
-            item.setQuantity(itemReq.getQuantity());
-            item.setPurchasePrice(itemReq.getPurchasePrice());
-            item.setPurchaseInvoice(invoice);
-            items.add(item);
+            List<PurchaseInvoiceItem> items = new ArrayList<>();
+            if (request.getItems() != null) {
+                for (PurchaseInvoiceRequest.ItemRequest itemReq : request.getItems()) {
+                    Product product = productRepository.findById(itemReq.getProductId())
+                            .orElseThrow(() -> new RuntimeException("Product not found: " + itemReq.getProductId()));
+
+                    // Update Stock (+ since it's a purchase)
+                    int currentStock = product.getStock() == null ? 0 : product.getStock();
+                    int qty = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1;
+                    product.setStock(currentStock + qty);
+                    
+                    // Update Purchase Price in the main inventory
+                    if (itemReq.getPurchasePrice() != null) {
+                        product.setPurchasePrice(itemReq.getPurchasePrice());
+                    }
+                    productRepository.save(product);
+
+                    PurchaseInvoiceItem item = new PurchaseInvoiceItem();
+                    item.setProduct(product);
+                    item.setQuantity(qty);
+                    item.setPurchasePrice(itemReq.getPurchasePrice());
+                    item.setPurchaseInvoice(invoice);
+                    items.add(item);
+                }
+            }
+
+            invoice.setItems(items);
+            return purchaseInvoiceRepository.save(invoice);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Error creating purchase invoice: " + e.getMessage());
         }
-
-        invoice.setItems(items);
-        return purchaseInvoiceRepository.save(invoice);
     }
 
-    // --- DTO Classes ---
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PurchaseInvoiceRequest {
         private String customInvoiceId;
         private String sellerName;
-        private String purchaseDate; 
+        private String purchaseDate;
         private Double grossTotal;
         private Double discountPercent;
         private Double cgst;
@@ -103,6 +122,7 @@ public class PurchaseInvoiceController {
         public List<ItemRequest> getItems() { return items; }
         public void setItems(List<ItemRequest> items) { this.items = items; }
 
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class ItemRequest {
             private Long productId;
             private Integer quantity;

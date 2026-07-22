@@ -636,3 +636,35 @@ body, html, #root {
   padding: 0.8rem;
   font-size: 1.1rem;
 }
+
+/* --- Payment Screen Styles --- */
+.payment-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.payment-method-card {
+  padding: 1rem 0.5rem;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  cursor: pointer;
+  text-align: center;
+  font-weight: 600;
+  color: #334155;
+  transition: all 0.2s ease;
+}
+
+.payment-method-card:hover {
+  border-color: #38bdf8;
+  background-color: #f0f9ff;
+}
+
+.payment-method-card.active {
+  border-color: #10b981;
+  background-color: #ecfdf5;
+  color: #065f46;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}

@@ -13,11 +13,10 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         if (productRepository.count() == 0) {
-            // Adding products with Name, Price, AND initial Stock!
-            productRepository.save(new Product("VESTS", 120.0, 50));
-            productRepository.save(new Product("BRIEF", 320.0, 30));
-            productRepository.save(new Product("SHIRT", 850.0, 15));
-            productRepository.save(new Product("PANTS", 1000.0, 20));
+            productRepository.save(new Product("Shirt", "6205", 250.0, 500.0, 20));
+            productRepository.save(new Product("Pant", "6203", 400.0, 800.0, 15));
+            productRepository.save(new Product("Shoes", "6403", 600.0, 1200.0, 10));
+            productRepository.save(new Product("Jacket", "6201", 1000.0, 2000.0, 8));
         }
     }
 }

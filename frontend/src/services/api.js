@@ -7,30 +7,32 @@ export const productService = {
       return res.json()
     }),
 
-  addProduct: (name, price, stock, purchasePrice) =>
+  addProduct: (name, purchasePrice, price, stock, hsnCode) =>
     fetch(`${API_URL}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         name, 
+        purchasePrice, 
         price, 
-        stock, 
-        purchasePrice 
+        stock,
+        hsnCode
       }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add product')
       return res.json()
     }),
 
-  updateProduct: (id, name, price, stock, purchasePrice) =>
+  updateProduct: (id, name, purchasePrice, price, stock, hsnCode) =>
     fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         name, 
+        purchasePrice, 
         price, 
-        stock, 
-        purchasePrice 
+        stock,
+        hsnCode
       }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update product')
@@ -46,22 +48,33 @@ export const productService = {
 }
 
 export const invoiceService = {
-  create: (customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
-    fetch(`${API_URL}/api/invoices/create`, {
+  create: (customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate) =>
+    fetch(`${API_URL}/api/invoices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         customerName, 
-        cartItems, 
+        // FIX: Strip out extra product details, only send exactly what Java needs
+        cartItems: cartItems.map(item => ({ 
+          id: item.id, 
+          quantity: item.quantity, 
+          price: item.price 
+        })), 
         grossTotal, 
         discountPercent, 
         cgst, 
         sgst, 
-        finalTotal 
+        finalTotal,
+        paymentMethod,
+        orderDate
       }),
-    }).then(res => {
-      if (!res.ok) throw new Error('Invoice creation failed')
-      return res.json()
+    }).then(async res => {
+      if (!res.ok) {
+        // This will grab the exact red error text from Spring Boot
+        const errText = await res.text();
+        throw new Error(errText || 'Invoice creation failed');
+      }
+      return res.json();
     }),
 
   getInvoices: () =>
@@ -122,7 +135,6 @@ export const customerService = {
     }),
 }
 
-// --- NEW Purchase Invoice Service ---
 export const purchaseInvoiceService = {
   getPurchaseInvoices: () =>
     fetch(`${API_URL}/api/purchase-invoices`).then(res => {
@@ -155,8 +167,11 @@ export const purchaseInvoiceService = {
           purchasePrice: item.purchasePrice
         }))
       }),
-    }).then(res => {
-      if (!res.ok) throw new Error('Purchase invoice creation failed')
+    }).then(async res => {
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Purchase invoice creation failed');
+      }
       return res.json()
     }),
 }

@@ -15,26 +15,26 @@ public class Product {
     private String name;
     private String hsnCode;
     private Double purchasePrice;
+    private Double mrp; // --- NEW MRP FIELD ---
     private Double price;
     private Integer stock;
 
-    // 1. Default no-argument constructor (Required by JPA)
     public Product() {}
 
-    // 2. Legacy Constructor matching old DataInitializer calls: (name, price, stock)
     public Product(String name, Double price, Integer stock) {
         this.name = name;
         this.price = price;
         this.stock = stock;
         this.purchasePrice = 0.0;
+        this.mrp = price; // Default MRP to Selling Price
         this.hsnCode = "N/A";
     }
 
-    // 3. Full Constructor: (name, hsnCode, purchasePrice, price, stock)
-    public Product(String name, String hsnCode, Double purchasePrice, Double price, Integer stock) {
+    public Product(String name, String hsnCode, Double purchasePrice, Double mrp, Double price, Integer stock) {
         this.name = name;
         this.hsnCode = hsnCode;
         this.purchasePrice = purchasePrice;
+        this.mrp = mrp;
         this.price = price;
         this.stock = stock;
     }
@@ -51,6 +51,9 @@ public class Product {
 
     public Double getPurchasePrice() { return purchasePrice; }
     public void setPurchasePrice(Double purchasePrice) { this.purchasePrice = purchasePrice; }
+
+    public Double getMrp() { return mrp; }
+    public void setMrp(Double mrp) { this.mrp = mrp; }
 
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }

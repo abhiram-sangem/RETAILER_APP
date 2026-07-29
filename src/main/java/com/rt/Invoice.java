@@ -26,7 +26,11 @@ public class Invoice {
     private Double finalTotal;
     private String paymentMethod; // Added Payment Method field
     
+    // --- NEW FIELDS FOR RETURNS ---
+    private Boolean isReturn = false;
+    private Long originalInvoiceId;
 
+    // Added orphanRemoval = true so items delete cleanly during an Edit
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "invoice", orphanRemoval = true)
     private List<InvoiceItem> items;
 
@@ -56,6 +60,12 @@ public class Invoice {
 
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public Boolean getIsReturn() { return isReturn; }
+    public void setIsReturn(Boolean isReturn) { this.isReturn = isReturn; }
+
+    public Long getOriginalInvoiceId() { return originalInvoiceId; }
+    public void setOriginalInvoiceId(Long originalInvoiceId) { this.originalInvoiceId = originalInvoiceId; }
 
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }

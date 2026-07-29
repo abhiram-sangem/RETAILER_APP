@@ -7,13 +7,14 @@ export const productService = {
       return res.json()
     }),
 
-  addProduct: (name, purchasePrice, price, stock, hsnCode) =>
+  addProduct: (name, purchasePrice, mrp, price, stock, hsnCode) =>
     fetch(`${API_URL}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         name, 
-        purchasePrice, 
+        purchasePrice,
+        mrp,
         price, 
         stock,
         hsnCode
@@ -23,19 +24,30 @@ export const productService = {
       return res.json()
     }),
 
-  updateProduct: (id, name, purchasePrice, price, stock, hsnCode) =>
+  updateProduct: (id, name, purchasePrice, mrp, price, stock, hsnCode) =>
     fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         name, 
-        purchasePrice, 
+        purchasePrice,
+        mrp,
         price, 
         stock,
         hsnCode
       }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update product')
+      return res.json()
+    }),
+
+  addProductsBulk: (productsArray) =>
+    fetch(`${API_URL}/api/products/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(productsArray),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to bulk import products')
       return res.json()
     }),
 
@@ -54,9 +66,8 @@ export const invoiceService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         customerName, 
-        // FIX: Strip out extra product details, only send exactly what Java needs
         cartItems: cartItems.map(item => ({ 
-          id: item.id, 
+          id: item.id || item.product?.id, 
           quantity: item.quantity, 
           price: item.price 
         })), 
@@ -70,9 +81,59 @@ export const invoiceService = {
       }),
     }).then(async res => {
       if (!res.ok) {
-        // This will grab the exact red error text from Spring Boot
         const errText = await res.text();
         throw new Error(errText || 'Invoice creation failed');
+      }
+      return res.json();
+    }),
+
+  update: (id, customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate) =>
+    fetch(`${API_URL}/api/invoices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        customerName, 
+        cartItems: cartItems.map(item => ({ 
+          id: item.id || item.product?.id, 
+          quantity: item.quantity, 
+          price: item.price 
+        })), 
+        grossTotal, 
+        discountPercent, 
+        cgst, 
+        sgst, 
+        finalTotal,
+        paymentMethod,
+        orderDate
+      }),
+    }).then(async res => {
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Invoice update failed');
+      }
+      return res.json();
+    }),
+
+  returnInvoice: (id, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
+    fetch(`${API_URL}/api/invoices/${id}/return`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        cartItems: cartItems.map(item => ({ 
+          id: item.id || item.product?.id, 
+          quantity: item.quantity, 
+          price: item.price 
+        })), 
+        grossTotal, 
+        discountPercent, 
+        cgst, 
+        sgst, 
+        finalTotal
+      }),
+    }).then(async res => {
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Return processing failed');
       }
       return res.json();
     }),
@@ -97,33 +158,33 @@ export const customerService = {
       return res.json()
     }),
 
-  addCustomer: (name, gstno, mobile, city) =>
+  addCustomer: (name, gstno, mobile, city, location, balance, state) =>
     fetch(`${API_URL}/api/customers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name, 
-        gstno, 
-        mobile, 
-        city 
-      }),
+      body: JSON.stringify({ name, gstno, mobile, city, location, balance, state }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add customer')
       return res.json()
     }),
 
-  updateCustomer: (id, name, gstno, mobile, city) =>
+  updateCustomer: (id, name, gstno, mobile, city, location, balance, state) =>
     fetch(`${API_URL}/api/customers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name, 
-        gstno, 
-        mobile, 
-        city 
-      }),
+      body: JSON.stringify({ name, gstno, mobile, city, location, balance, state }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update customer')
+      return res.json()
+    }),
+
+  addCustomersBulk: (customersArray) =>
+    fetch(`${API_URL}/api/customers/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(customersArray),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to bulk import customers')
       return res.json()
     }),
 
@@ -162,7 +223,7 @@ export const purchaseInvoiceService = {
         sgst,
         finalTotal,
         items: purchaseCart.map(item => ({
-          productId: item.id,
+          productId: item.id || item.product?.id,
           quantity: item.quantity,
           purchasePrice: item.purchasePrice
         }))
@@ -174,4 +235,17 @@ export const purchaseInvoiceService = {
       }
       return res.json()
     }),
+}
+
+export const historyService = {
+  getInventoryHistory: () =>
+    fetch(`${API_URL}/api/history/inventory`).then(res => {
+      if (!res.ok) throw new Error('Failed to load inventory history')
+      return res.json()
+    }),
+  getInvoiceHistory: () =>
+    fetch(`${API_URL}/api/history/invoices`).then(res => {
+      if (!res.ok) throw new Error('Failed to load invoice history')
+      return res.json()
+    })
 }

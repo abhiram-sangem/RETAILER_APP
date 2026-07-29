@@ -18,14 +18,14 @@ public class Customer {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false)
     private String gstno;
-
-    @Column(nullable = false)
     private String mobile;
-
-    @Column(nullable = false)
     private String city;
+    
+    // --- NEW FIELDS ---
+    private String location;
+    private Double balance;
+    private String state;
 
     public Customer() {
     }
@@ -34,45 +34,27 @@ public class Customer {
         this.name = name;
     }
 
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 
-    public String getName() {
-        return name;
-    }
+    public String getGstno() { return gstno; }
+    public void setGstno(String gstno) { this.gstno = gstno; }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+    public String getMobile() { return mobile; }
+    public void setMobile(String mobile) { this.mobile = mobile; }
 
-    public String getGstno() {
-        return gstno;
-    }
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
 
-    public void setGstno(String gstno) {
-        this.gstno = gstno;
-    }
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
 
-    public String getMobile() {
-        return mobile;
-    }
+    public Double getBalance() { return balance; }
+    public void setBalance(Double balance) { this.balance = balance; }
 
-    public void setMobile(String mobile) {
-        this.mobile = mobile;
-    }
-
-    public String getCity() {
-        return city;
-    }
-
-    public void setCity(String city) {
-        this.city = city;
-    }
-
-
+    public String getState() { return state; }
+    public void setState(String state) { this.state = state; }
 }

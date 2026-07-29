@@ -1,5 +1,6 @@
 package com.rt;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -23,18 +24,54 @@ public class CustomerController {
         if (customer.getName() == null || customer.getName().trim().isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
+        customer.setId(null); // Safe-guard
         return ResponseEntity.ok(customerRepository.save(customer));
+    }
+
+    @PostMapping("/bulk")
+    public ResponseEntity<List<Customer>> addCustomersBulk(@RequestBody List<Customer> customers) {
+        List<Customer> savedCustomers = new ArrayList<>();
+        
+        for (Customer c : customers) {
+            if (c.getName() == null || c.getName().trim().isEmpty()) continue;
+            
+            Customer existing = null;
+            
+            if (c.getMobile() != null && !c.getMobile().trim().isEmpty()) {
+                existing = customerRepository.findFirstByMobile(c.getMobile().trim()).orElse(null);
+            }
+            if (existing == null) {
+                existing = customerRepository.findFirstByName(c.getName().trim()).orElse(null);
+            }
+            
+            if (existing != null) {
+                if (c.getGstno() != null && !c.getGstno().isEmpty()) existing.setGstno(c.getGstno());
+                if (c.getMobile() != null && !c.getMobile().isEmpty()) existing.setMobile(c.getMobile());
+                if (c.getCity() != null && !c.getCity().isEmpty()) existing.setCity(c.getCity());
+                if (c.getLocation() != null && !c.getLocation().isEmpty()) existing.setLocation(c.getLocation());
+                if (c.getState() != null && !c.getState().isEmpty()) existing.setState(c.getState());
+                if (c.getBalance() != null) existing.setBalance(c.getBalance());
+                
+                savedCustomers.add(customerRepository.save(existing));
+            } else {
+                c.setId(null); 
+                savedCustomers.add(customerRepository.save(c));
+            }
+        }
+        return ResponseEntity.ok(savedCustomers);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Customer> updateCustomer(@PathVariable Long id, @RequestBody Customer customerDetails) {
         return customerRepository.findById(id)
                 .map(customer -> {
-                    // Update with null checks to avoid wiping data accidentally
                     if (customerDetails.getName() != null) customer.setName(customerDetails.getName());
                     if (customerDetails.getGstno() != null) customer.setGstno(customerDetails.getGstno());
                     if (customerDetails.getMobile() != null) customer.setMobile(customerDetails.getMobile());
                     if (customerDetails.getCity() != null) customer.setCity(customerDetails.getCity());
+                    if (customerDetails.getLocation() != null) customer.setLocation(customerDetails.getLocation());
+                    if (customerDetails.getBalance() != null) customer.setBalance(customerDetails.getBalance());
+                    if (customerDetails.getState() != null) customer.setState(customerDetails.getState());
                     
                     return ResponseEntity.ok(customerRepository.save(customer));
                 })

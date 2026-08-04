@@ -1,9 +1,15 @@
 package com.rt;
 
-import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 
 @Entity
 public class PurchaseInvoice {
@@ -14,9 +20,10 @@ public class PurchaseInvoice {
 
     private String customInvoiceId;
     private String sellerName;
-    private LocalDate purchaseDate; 
-    private LocalDateTime entryDate; 
+    private LocalDate purchaseDate;
+    private LocalDateTime entryDate;
 
+    // --- NEW BILLING COLUMNS ---
     private Double grossTotal;
     private Double discountPercent;
     private Double cgst;
@@ -26,7 +33,7 @@ public class PurchaseInvoice {
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "purchaseInvoice")
     private List<PurchaseInvoiceItem> items;
 
-    // Getters and Setters
+    // --- GETTERS & SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 

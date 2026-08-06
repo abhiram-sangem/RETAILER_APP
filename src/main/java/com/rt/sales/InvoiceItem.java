@@ -1,6 +1,7 @@
-package com.rt;
+package com.rt.sales;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.rt.inventory.Product;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

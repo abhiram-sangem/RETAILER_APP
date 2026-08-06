@@ -1,4 +1,4 @@
-package com.rt;
+package com.rt.sales;
 
 import java.time.LocalDateTime;
 import java.util.List;

@@ -1,4 +1,4 @@
-package com.rt;
+package com.rt.sales;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rt.inventory.Product;
+import com.rt.inventory.ProductRepository;
+
 @RestController
 @RequestMapping("/api/products")
 @CrossOrigin(origins = "*")

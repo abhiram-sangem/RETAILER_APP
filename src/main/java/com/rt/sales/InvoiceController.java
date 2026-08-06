@@ -1,7 +1,17 @@
-package com.rt;
+package com.rt.sales;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import com.rt.history.InventoryHistory;           // Fixed name
+import com.rt.history.InventoryHistoryRepository; // Fixed name
+import com.rt.history.InvoiceHistory;             
+import com.rt.history.InvoiceHistoryRepository;   
+import com.rt.inventory.Product;                  
+import com.rt.inventory.ProductRepository;        
+import com.rt.customers.Customer;                 
+import com.rt.customers.CustomerRepository;       
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -20,10 +30,13 @@ public class InvoiceController {
     private ProductRepository productRepository;
     
     @Autowired
-    private InventoryLogRepository inventoryLogRepository;
+    private InventoryHistoryRepository inventoryHistoryRepository; // Fixed name
     
     @Autowired
     private InvoiceHistoryRepository invoiceHistoryRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
 
     @GetMapping
     public List<Invoice> getAllInvoices() {
@@ -50,8 +63,12 @@ public class InvoiceController {
         invoice.setDiscountPercent(request.getDiscountPercent() != null ? request.getDiscountPercent() : 0.0);
         invoice.setCgst(request.getCgst() != null ? request.getCgst() : 0.0);
         invoice.setSgst(request.getSgst() != null ? request.getSgst() : 0.0);
-        invoice.setFinalTotal(request.getFinalTotal() != null ? request.getFinalTotal() : 0.0);
-        invoice.setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "Cash");
+        
+        Double finalTotal = request.getFinalTotal() != null ? request.getFinalTotal() : 0.0;
+        invoice.setFinalTotal(finalTotal);
+        
+        String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : "Cash";
+        invoice.setPaymentMethod(paymentMethod);
 
         List<InvoiceItem> items = new ArrayList<>();
         if (request.getCartItems() != null) {
@@ -74,11 +91,31 @@ public class InvoiceController {
         Invoice savedInvoice = invoiceRepository.save(invoice);
         
         for (InvoiceItem item : savedInvoice.getItems()) {
-            inventoryLogRepository.save(new InventoryLog(
-                item.getProduct().getId(), item.getProduct().getName(), "SALE", 
-                -item.getQuantity(), item.getProduct().getStock(), "Sale Bill #" + savedInvoice.getId()
-            ));
+            // FIXED: Using safe setters instead of broken constructor
+            InventoryHistory log = new InventoryHistory();
+            log.setProductId(item.getProduct().getId());
+            log.setProductName(item.getProduct().getName());
+            log.setActionType("SALE");
+            log.setQuantityChanged(-item.getQuantity());
+            log.setFinalStock(item.getProduct().getStock());
+            log.setDescription("Sale Bill #" + savedInvoice.getId());
+            log.setTimestamp(LocalDateTime.now());
+            inventoryHistoryRepository.save(log);
         }
+
+        // ==========================================
+        // LEDGER LOGIC: If Pay Later, increase dues
+        // ==========================================
+        if ("Pay Later".equalsIgnoreCase(paymentMethod)) {
+            List<Customer> customers = customerRepository.findByName(request.getCustomerName());
+            if (customers != null && !customers.isEmpty()) {
+                Customer customer = customers.get(0); // Safely get the first match
+                Double currentBalance = customer.getBalance() != null ? customer.getBalance() : 0.0;
+                customer.setBalance(currentBalance + finalTotal);
+                customerRepository.save(customer);
+            }
+        }
+
         return savedInvoice;
     }
 
@@ -86,7 +123,6 @@ public class InvoiceController {
     public Invoice updateInvoice(@PathVariable Long id, @RequestBody InvoiceRequest request) {
         Invoice invoice = invoiceRepository.findById(id).orElseThrow();
 
-        // 1. Create Edit History Record & Capture Old Items as JSON
         InvoiceHistory history = new InvoiceHistory();
         history.setOriginalInvoiceId(invoice.getId());
         history.setCustomerName(invoice.getCustomerName());
@@ -105,20 +141,25 @@ public class InvoiceController {
         oldJson.append("]");
         history.setOldItemsJson(oldJson.toString());
 
-        // 2. Revert Old Inventory
+        // Revert Old Inventory
         for (InvoiceItem oldItem : invoice.getItems()) {
             Product p = oldItem.getProduct();
             p.setStock((p.getStock() == null ? 0 : p.getStock()) + oldItem.getQuantity());
             productRepository.save(p);
             
-            inventoryLogRepository.save(new InventoryLog(
-                p.getId(), p.getName(), "EDIT_REVERT", 
-                oldItem.getQuantity(), p.getStock(), "Revert Bill #" + invoice.getId() + " for Edit"
-            ));
+            // FIXED
+            InventoryHistory log = new InventoryHistory();
+            log.setProductId(p.getId());
+            log.setProductName(p.getName());
+            log.setActionType("EDIT_REVERT");
+            log.setQuantityChanged(oldItem.getQuantity());
+            log.setFinalStock(p.getStock());
+            log.setDescription("Revert Bill #" + invoice.getId() + " for Edit");
+            log.setTimestamp(LocalDateTime.now());
+            inventoryHistoryRepository.save(log);
         }
         invoice.getItems().clear();
 
-        // 3. Update Invoice Details
         invoice.setCustomerName(request.getCustomerName());
         invoice.setGrossTotal(request.getGrossTotal() != null ? request.getGrossTotal() : 0.0);
         invoice.setDiscountPercent(request.getDiscountPercent() != null ? request.getDiscountPercent() : 0.0);
@@ -133,7 +174,6 @@ public class InvoiceController {
             invoice.setOrderDate(originalDateTime != null ? LocalDateTime.of(requestedDate, originalDateTime.toLocalTime()) : LocalDateTime.of(requestedDate, LocalTime.now()));
         }
 
-        // 4. Apply New Inventory & Capture New Items as JSON
         StringBuilder newJson = new StringBuilder("[");
         if (request.getCartItems() != null) {
             for (int i = 0; i < request.getCartItems().size(); i++) {
@@ -158,17 +198,22 @@ public class InvoiceController {
                     appliedPrice));
                 if (i < request.getCartItems().size() - 1) newJson.append(",");
                 
-                inventoryLogRepository.save(new InventoryLog(
-                    product.getId(), product.getName(), "EDIT_APPLY", 
-                    -qty, product.getStock(), "Apply New Items to Bill #" + invoice.getId()
-                ));
+                // FIXED
+                InventoryHistory log = new InventoryHistory();
+                log.setProductId(product.getId());
+                log.setProductName(product.getName());
+                log.setActionType("EDIT_APPLY");
+                log.setQuantityChanged(-qty);
+                log.setFinalStock(product.getStock());
+                log.setDescription("Apply New Items to Bill #" + invoice.getId());
+                log.setTimestamp(LocalDateTime.now());
+                inventoryHistoryRepository.save(log);
             }
         }
         newJson.append("]");
         
         Invoice savedInvoice = invoiceRepository.save(invoice);
         
-        // 5. Complete and Save History Record
         history.setNewFinalTotal(savedInvoice.getFinalTotal());
         history.setNewItemsJson(newJson.toString());
         invoiceHistoryRepository.save(history);
@@ -187,11 +232,16 @@ public class InvoiceController {
         returnInvoice.setIsReturn(true);
         returnInvoice.setOriginalInvoiceId(originalInvoice.getId());
 
-        returnInvoice.setGrossTotal(-(request.getGrossTotal() != null ? request.getGrossTotal() : 0.0));
+        Double returnGross = request.getGrossTotal() != null ? request.getGrossTotal() : 0.0;
+        Double returnCgst = request.getCgst() != null ? request.getCgst() : 0.0;
+        Double returnSgst = request.getSgst() != null ? request.getSgst() : 0.0;
+        Double returnFinal = request.getFinalTotal() != null ? request.getFinalTotal() : 0.0;
+
+        returnInvoice.setGrossTotal(-returnGross);
         returnInvoice.setDiscountPercent(request.getDiscountPercent() != null ? request.getDiscountPercent() : 0.0);
-        returnInvoice.setCgst(-(request.getCgst() != null ? request.getCgst() : 0.0));
-        returnInvoice.setSgst(-(request.getSgst() != null ? request.getSgst() : 0.0));
-        returnInvoice.setFinalTotal(-(request.getFinalTotal() != null ? request.getFinalTotal() : 0.0));
+        returnInvoice.setCgst(-returnCgst);
+        returnInvoice.setSgst(-returnSgst);
+        returnInvoice.setFinalTotal(-returnFinal);
 
         List<InvoiceItem> returnItems = new ArrayList<>();
         if (request.getCartItems() != null) {
@@ -209,13 +259,34 @@ public class InvoiceController {
                 item.setInvoice(returnInvoice);
                 returnItems.add(item);
                 
-                inventoryLogRepository.save(new InventoryLog(
-                    product.getId(), product.getName(), "RETURN", 
-                    qtyToReturn, product.getStock(), "Return from Bill #" + originalInvoice.getId()
-                ));
+                // FIXED
+                InventoryHistory log = new InventoryHistory();
+                log.setProductId(product.getId());
+                log.setProductName(product.getName());
+                log.setActionType("RETURN");
+                log.setQuantityChanged(qtyToReturn);
+                log.setFinalStock(product.getStock());
+                log.setDescription("Return from Bill #" + originalInvoice.getId());
+                log.setTimestamp(LocalDateTime.now());
+                inventoryHistoryRepository.save(log);
             }
         }
         returnInvoice.setItems(returnItems);
+
+        // ==========================================
+        // LEDGER LOGIC: Decrease dues if returning a Pay Later bill
+        // ==========================================
+        if ("Pay Later".equalsIgnoreCase(originalInvoice.getPaymentMethod())) {
+            List<Customer> customers = customerRepository.findByName(originalInvoice.getCustomerName());
+            if (customers != null && !customers.isEmpty()) {
+                Customer customer = customers.get(0);
+                Double currentBalance = customer.getBalance() != null ? customer.getBalance() : 0.0;
+                // Subtract the amount being returned from their debt
+                customer.setBalance(currentBalance - returnFinal);
+                customerRepository.save(customer);
+            }
+        }
+
         return invoiceRepository.save(returnInvoice);
     }
 

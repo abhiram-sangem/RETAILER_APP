@@ -1,4 +1,4 @@
-package com.rt;
+package com.rt.customers;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

@@ -1,4 +1,4 @@
-package com.rt;
+package com.rt.inventory;
 
 import java.util.Optional;
 

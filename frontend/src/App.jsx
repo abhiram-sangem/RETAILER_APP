@@ -6,7 +6,8 @@ import {
   invoiceService, 
   customerService, 
   purchaseInvoiceService,
-  historyService
+  historyService,
+  receiptService
 } from './services/api'
 
 export default function App() {
@@ -15,8 +16,9 @@ export default function App() {
   // =========================================
   const formatProductId = (id) => id ? `PR${String(id).padStart(4, '0')}` : 'N/A'
   const formatInvoiceId = (id) => id ? `INV-${String(id).padStart(4, '0')}` : 'N/A'
+  const formatPurchaseInvoiceId = (id) => id ? `PINV-${String(id).padStart(4, '0')}` : 'N/A'
+  const formatReceiptId = (id) => id ? `REC-${String(id).padStart(4, '0')}` : 'N/A'
 
-  // Indian Rupee & Comma Formatter
   const formatMoney = (amount) => {
     const num = Number(amount) || 0;
     return '₹ ' + num.toLocaleString('en-IN', { 
@@ -41,48 +43,87 @@ export default function App() {
   const [invoices, setInvoices] = useState([])
   const [purchaseInvoices, setPurchaseInvoices] = useState([])
   const [customers, setCustomers] = useState([])
+  const [receipts, setReceipts] = useState([])
   
   // History States
   const [inventoryHistory, setInventoryHistory] = useState([])
   const [invoiceHistory, setInvoiceHistory] = useState([])
+  const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([])
   const [viewingHistoryLog, setViewingHistoryLog] = useState(null)
+  const [viewingPurchaseHistoryLog, setViewingPurchaseHistoryLog] = useState(null)
+
+  // Ledger Statement State
+  const [viewingCustomerStatement, setViewingCustomerStatement] = useState(null)
 
   // =========================================
   // --- Search & Pagination States ---
   // =========================================
   const [searchQuery, setSearchQuery] = useState('')
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [purchaseSearchQuery, setPurchaseSearchQuery] = useState('')
   const [isSellerDropdownOpen, setIsSellerDropdownOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
 
   // =========================================
-  // --- Sales Cart & Billing States ---
+  // --- MULTI-TAB SALES STATE ENGINE ---
   // =========================================
-  const [activeCustomer, setActiveCustomer] = useState(null)
-  const [discountPercent, setDiscountPercent] = useState(0)
-  const [taxPercent, setTaxPercent] = useState(5)
-  const [showAddProductModal, setShowAddProductModal] = useState(false)
-  const [editingInvoiceId, setEditingInvoiceId] = useState(null)
-  const [returnSaleData, setReturnSaleData] = useState(null)
-  
-  // Checkout Payment Screen States
-  const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0])
-  const [paymentMethod, setPaymentMethod] = useState('Cash')
-  const [isPayLater, setIsPayLater] = useState(false)
-  
-  const [cart, setCart] = useState(() => {
-    try { 
-      return JSON.parse(localStorage.getItem('cart')) || [] 
-    } catch { 
-      return [] 
-    }
+  const generateNewTab = (title = 'New Bill') => ({
+    id: Date.now() + Math.random(),
+    title,
+    cart: [],
+    activeCustomer: null,
+    customerSearch: '',
+    discountPercent: 0,
+    taxPercent: 5,
+    editingInvoiceId: null,
+    isPayLater: false,
+    paymentMethod: 'Cash',
+    saleDate: new Date().toISOString().split('T')[0],
+    isDropdownOpen: false
+  });
+
+  const [salesTabs, setSalesTabs] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('salesTabs'))
+      return saved?.length ? saved : [generateNewTab()]
+    } catch { return [generateNewTab()] }
   })
+
+  const [activeTabId, setActiveTabId] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('activeTabId')) || salesTabs[0].id
+    } catch { return salesTabs[0].id }
+  })
+
+  const activeTab = salesTabs.find(t => t.id === activeTabId) || salesTabs[0]
+
+  const updateActiveTab = (updates) => {
+    setSalesTabs(tabs => tabs.map(tab => 
+      tab.id === activeTabId ? { ...tab, ...updates } : tab
+    ))
+  }
+
+  const [drafts, setDrafts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('salesDrafts')) || [] } 
+    catch { return [] }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('salesTabs', JSON.stringify(salesTabs))
+    localStorage.setItem('activeTabId', JSON.stringify(activeTabId))
+  }, [salesTabs, activeTabId])
+
+  useEffect(() => {
+    localStorage.setItem('salesDrafts', JSON.stringify(drafts))
+  }, [drafts])
+
+  const [showAddProductModal, setShowAddProductModal] = useState(false)
+  const [returnSaleData, setReturnSaleData] = useState(null)
 
   // =========================================
   // --- Purchase Cart & Billing States ---
   // =========================================
+  const [editingPurchaseInvoiceId, setEditingPurchaseInvoiceId] = useState(null)
   const [purchaseSellerName, setPurchaseSellerName] = useState('')
   const [customInvoiceId, setCustomInvoiceId] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0])
@@ -93,11 +134,21 @@ export default function App() {
   const [purchaseCart, setPurchaseCart] = useState(() => {
     try { 
       return JSON.parse(localStorage.getItem('purchaseCart')) || [] 
-    } catch { 
-      return [] 
-    }
+    } catch { return [] }
   })
   const [error, setError] = useState('')
+
+  // =========================================
+  // --- Receipts & Ledger States ---
+  // =========================================
+  const [receiptCustomer, setReceiptCustomer] = useState(null)
+  const [receiptSearch, setReceiptSearch] = useState('')
+  const [isReceiptDropdownOpen, setIsReceiptDropdownOpen] = useState(false)
+  const [receiptAmount, setReceiptAmount] = useState('')
+  const [receiptDiscount, setReceiptDiscount] = useState('') // NEW: "Less" tracking
+  const [receiptMethod, setReceiptMethod] = useState('Cash')
+  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]) // NEW: Manual Date
+  const [receiptRemarks, setReceiptRemarks] = useState('Payment received with thanks.')
 
   // =========================================
   // --- Modal Visibility & Form States ---
@@ -107,13 +158,7 @@ export default function App() {
   const [isCustomerEditMode, setIsCustomerEditMode] = useState(false)
   const [editingCustomerId, setEditingCustomerId] = useState(null)
   const [customerForm, setCustomerForm] = useState({ 
-    name: '', 
-    gstno: '', 
-    mobile: '', 
-    city: '', 
-    location: '', 
-    balance: 0, 
-    state: ''
+    name: '', gstno: '', mobile: '', city: '', location: '', state: ''
   })
 
   const [viewingProduct, setViewingProduct] = useState(null)
@@ -121,12 +166,7 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editingProductId, setEditingProductId] = useState(null)
   const [productForm, setProductForm] = useState({ 
-    name: '', 
-    hsnCode: '', 
-    purchasePrice: '', 
-    mrp: '', 
-    price: '', 
-    stock: '' 
+    name: '', hsnCode: '', purchasePrice: '', mrp: '', price: '', stock: '' 
   })
 
   const [showInventoryModal, setShowInventoryModal] = useState(false)
@@ -136,14 +176,8 @@ export default function App() {
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [selectedPurchaseInvoice, setSelectedPurchaseInvoice] = useState(null)
 
-  // =========================================
-  // --- Dashboard Card Expansion States ---
-  // =========================================
   const [expandedStats, setExpandedStats] = useState({
-    daily: false, 
-    weekly: false, 
-    monthly: false, 
-    yearly: false
+    daily: false, weekly: false, monthly: false, yearly: false
   })
 
   // =========================================
@@ -155,11 +189,8 @@ export default function App() {
     loadInvoices()
     loadPurchaseInvoices()
     loadHistory()
+    loadReceipts()
   }, [])
-
-  useEffect(() => {
-    localStorage.setItem('cart', JSON.stringify(cart))
-  }, [cart])
 
   useEffect(() => {
     localStorage.setItem('purchaseCart', JSON.stringify(purchaseCart))
@@ -167,16 +198,14 @@ export default function App() {
 
   useEffect(() => {
     setSearchQuery('')
+    setPurchaseSearchQuery('')
     setCurrentPage(1)
   }, [view])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, itemsPerPage])
+  }, [searchQuery, purchaseSearchQuery, itemsPerPage])
 
-  // =========================================
-  // --- Login Handler ---
-  // =========================================
   const handleLogin = (e) => {
     e.preventDefault();
     if (username === 'admin' && password === '12345') {
@@ -190,15 +219,126 @@ export default function App() {
   // =========================================
   // --- Core Calculation Engines (useMemo) ---
   // =========================================
-  const salesStats = useMemo(() => {
-    const dailyMap = {};
-    const weeklyMap = {};
-    const monthlyMap = {};
-    const yearlyMap = {};
+  
+  // SPLIT LEDGER: Customer Purchases (Our Sales) Table
+  const customerSalesData = useMemo(() => {
+    if (!viewingCustomerStatement) return [];
+    
+    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetNameNorm = normalizeName(viewingCustomerStatement.name);
+    
+    let sales = [];
+    invoices.forEach(inv => {
+      const invNameNorm = normalizeName(inv.customerName);
+      if (invNameNorm === targetNameNorm) {
+        sales.push({
+          sortDate: new Date(inv.orderDate),
+          type: inv.isReturn ? 'Sale Return' : 'Sale Bill',
+          ref: formatInvoiceId(inv.id),
+          method: inv.paymentMethod || 'Cash',
+          amount: inv.finalTotal || inv.totalAmount || 0,
+          isReturn: inv.isReturn
+        });
+      }
+    });
+
+    return sales.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime()); // Newest at top
+  }, [viewingCustomerStatement, invoices]);
+
+  // SPLIT LEDGER: Customer Payments (Receipts) Table
+  const customerReceiptsData = useMemo(() => {
+    if (!viewingCustomerStatement) return [];
+    
+    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetNameNorm = normalizeName(viewingCustomerStatement.name);
+    const targetId = viewingCustomerStatement.id;
+    
+    let recs = [];
+    receipts.forEach(rec => {
+      const recNameNorm = normalizeName(rec.customerName);
+      if (rec.customerId === targetId || recNameNorm === targetNameNorm) {
+        recs.push({
+          sortDate: new Date(rec.receiptDate),
+          ref: formatReceiptId(rec.id),
+          method: rec.paymentMode,
+          amount: rec.amount,
+          discount: rec.discountAmount || 0 // Pass the discount down
+        });
+      }
+    });
+
+    return recs.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime()); // Newest at top
+  }, [viewingCustomerStatement, receipts]);
+
+  // FULL LEDGER STATEMENT ENGINE (Double Entry)
+  const customerStatementData = useMemo(() => {
+    if (!viewingCustomerStatement) return [];
+    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetNameNorm = normalizeName(viewingCustomerStatement.name);
+    const targetId = viewingCustomerStatement.id;
+    
+    let statement = [];
 
     invoices.forEach(inv => {
-      if (inv.isReturn) return;
+      const invNameNorm = normalizeName(inv.customerName);
+      if (invNameNorm === targetNameNorm) {
+        const isPayLater = inv.paymentMethod === 'Pay Later';
+        const amount = inv.finalTotal || inv.totalAmount || 0;
+        
+        let debit = 0; let credit = 0;
+        if (!inv.isReturn) {
+          debit = amount;
+          credit = isPayLater ? 0 : amount;
+        } else {
+          credit = amount;
+          debit = isPayLater ? 0 : amount; 
+        }
 
+        statement.push({
+          sortDate: new Date(inv.orderDate),
+          type: inv.isReturn ? 'Sale Return' : 'Sale Bill',
+          ref: formatInvoiceId(inv.id),
+          method: inv.paymentMethod || 'Cash',
+          debit: debit,
+          credit: credit,
+          isCashTx: (!inv.isReturn && !isPayLater) 
+        });
+      }
+    });
+
+    receipts.forEach(rec => {
+      const recNameNorm = normalizeName(rec.customerName);
+      if (rec.customerId === targetId || recNameNorm === targetNameNorm) {
+        const recDiscount = rec.discountAmount || 0;
+        statement.push({
+          sortDate: new Date(rec.receiptDate),
+          type: 'Payment Received',
+          ref: formatReceiptId(rec.id),
+          method: rec.paymentMode,
+          debit: 0,
+          // LEDGER CREDIT = Actual Cash + The Discount Given
+          credit: rec.amount + recDiscount,
+          isCashTx: false
+        });
+      }
+    });
+
+    statement.sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
+    let runningBalance = 0;
+    statement.forEach(item => {
+      runningBalance += item.debit; 
+      runningBalance -= item.credit; 
+      item.runningBalance = runningBalance;
+    });
+
+    return statement.reverse();
+  }, [viewingCustomerStatement, invoices, receipts]);
+
+
+  const salesStats = useMemo(() => {
+    const dailyMap = {}; const weeklyMap = {}; const monthlyMap = {}; const yearlyMap = {};
+    invoices.forEach(inv => {
+      if (inv.isReturn) return;
       const d = new Date(inv.orderDate);
       const total = inv.finalTotal || inv.totalAmount || 0;
       
@@ -227,72 +367,36 @@ export default function App() {
       yearlyMap[yearKey].total += total;
     });
 
-    const toSortedArray = (map) => Object.entries(map)
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(entry => entry[1]);
-
-    return {
-      daily: toSortedArray(dailyMap),
-      weekly: toSortedArray(weeklyMap),
-      monthly: toSortedArray(monthlyMap),
-      yearly: toSortedArray(yearlyMap),
-    };
+    const toSortedArray = (map) => Object.entries(map).sort((a, b) => b[0].localeCompare(a[0])).map(entry => entry[1]);
+    return { daily: toSortedArray(dailyMap), weekly: toSortedArray(weeklyMap), monthly: toSortedArray(monthlyMap), yearly: toSortedArray(yearlyMap) };
   }, [invoices]);
 
-  const billingDetails = useMemo(() => {
-    const subtotal = cart.reduce((sum, item) => sum + item.price * (Number(item.quantity) || 0), 0)
-    const discountAmount = subtotal * (discountPercent / 100)
+  const activeBillingDetails = useMemo(() => {
+    const subtotal = activeTab.cart.reduce((sum, item) => sum + item.price * (Number(item.quantity) || 0), 0)
+    const discountAmount = subtotal * (activeTab.discountPercent / 100)
     const taxableAmount = subtotal - discountAmount
-    
-    const cgstPercent = taxPercent / 2
-    const sgstPercent = taxPercent / 2
-    
+    const cgstPercent = activeTab.taxPercent / 2
+    const sgstPercent = activeTab.taxPercent / 2
     const cgst = taxableAmount * (cgstPercent / 100)
     const sgst = taxableAmount * (sgstPercent / 100)
-    
     const exactTotal = taxableAmount + cgst + sgst
     const finalTotal = Math.round(exactTotal)
     const roundoff = finalTotal - exactTotal
-    
-    return { 
-      subtotal, 
-      discountAmount, 
-      taxableAmount, 
-      cgstPercent, 
-      sgstPercent, 
-      cgst, 
-      sgst, 
-      roundoff, 
-      finalTotal 
-    }
-  }, [cart, discountPercent, taxPercent])
+    return { subtotal, discountAmount, taxableAmount, cgstPercent, sgstPercent, cgst, sgst, roundoff, finalTotal }
+  }, [activeTab.cart, activeTab.discountPercent, activeTab.taxPercent])
 
   const purchaseBillingDetails = useMemo(() => {
     const subtotal = purchaseCart.reduce((sum, item) => sum + (item.purchasePrice || 0) * (Number(item.quantity) || 0), 0)
     const discountAmount = subtotal * (purchaseDiscountPercent / 100)
     const taxableAmount = subtotal - discountAmount
-    
     const cgstPercent = purchaseTaxPercent / 2
     const sgstPercent = purchaseTaxPercent / 2
-    
     const cgst = taxableAmount * (cgstPercent / 100)
     const sgst = taxableAmount * (sgstPercent / 100)
-    
     const exactTotal = taxableAmount + cgst + sgst
     const finalTotal = Math.round(exactTotal)
     const roundoff = finalTotal - exactTotal
-    
-    return { 
-      subtotal, 
-      discountAmount, 
-      taxableAmount, 
-      cgstPercent, 
-      sgstPercent, 
-      cgst, 
-      sgst, 
-      roundoff, 
-      finalTotal 
-    }
+    return { subtotal, discountAmount, taxableAmount, cgstPercent, sgstPercent, cgst, sgst, roundoff, finalTotal }
   }, [purchaseCart, purchaseDiscountPercent, purchaseTaxPercent])
 
   const selectedInvoiceMath = useMemo(() => {
@@ -306,25 +410,10 @@ export default function App() {
     const exactTotal = taxableAmount + cgst + sgst;
     const finalTotal = selectedInvoice.finalTotal || selectedInvoice.totalAmount || 0;
     const roundoff = finalTotal - exactTotal;
-    
     const cgstPercent = taxableAmount > 0 ? (cgst / taxableAmount) * 100 : 0;
     const sgstPercent = taxableAmount > 0 ? (sgst / taxableAmount) * 100 : 0;
     const totalTaxPercent = cgstPercent + sgstPercent;
-
-    return { 
-      subtotal, 
-      discountPercent, 
-      discountAmount, 
-      taxableAmount, 
-      cgst, 
-      sgst, 
-      exactTotal, 
-      finalTotal, 
-      roundoff, 
-      cgstPercent, 
-      sgstPercent, 
-      totalTaxPercent 
-    };
+    return { subtotal, discountPercent, discountAmount, taxableAmount, cgst, sgst, exactTotal, finalTotal, roundoff, cgstPercent, sgstPercent, totalTaxPercent };
   }, [selectedInvoice]);
 
   const selectedPurchaseInvoiceMath = useMemo(() => {
@@ -338,118 +427,109 @@ export default function App() {
     const exactTotal = taxableAmount + cgst + sgst;
     const finalTotal = selectedPurchaseInvoice.finalTotal || 0;
     const roundoff = finalTotal - exactTotal;
-    
     const cgstPercent = taxableAmount > 0 ? (cgst / taxableAmount) * 100 : 0;
     const sgstPercent = taxableAmount > 0 ? (sgst / taxableAmount) * 100 : 0;
     const totalTaxPercent = cgstPercent + sgstPercent;
-
-    return { 
-      subtotal, 
-      discountPercent, 
-      discountAmount, 
-      taxableAmount, 
-      cgst, 
-      sgst, 
-      exactTotal, 
-      finalTotal, 
-      roundoff, 
-      cgstPercent, 
-      sgstPercent, 
-      totalTaxPercent 
-    };
+    return { subtotal, discountPercent, discountAmount, taxableAmount, cgst, sgst, exactTotal, finalTotal, roundoff, cgstPercent, sgstPercent, totalTaxPercent };
   }, [selectedPurchaseInvoice]);
 
   const returnMath = useMemo(() => {
     if (!returnSaleData) return null;
-    
     const subtotal = returnSaleData.returnItems.reduce((sum, item) => sum + (item.price * (Number(item.returnQty) || 0)), 0);
     const discountPercent = returnSaleData.discountPercent || 0;
     const discountAmount = subtotal * (discountPercent / 100);
     const taxableAmount = subtotal - discountAmount;
-    
     const origSubtotal = returnSaleData.grossTotal || 0;
     const origDiscountAmt = origSubtotal * (discountPercent / 100);
     const origTaxable = origSubtotal - origDiscountAmt;
     const origCgstPercent = origTaxable > 0 ? (returnSaleData.cgst / origTaxable) : 0;
     const origSgstPercent = origTaxable > 0 ? (returnSaleData.sgst / origTaxable) : 0;
-
     const cgst = taxableAmount * origCgstPercent;
     const sgst = taxableAmount * origSgstPercent;
     const exactTotal = taxableAmount + cgst + sgst;
     const finalTotal = Math.round(exactTotal);
     const roundoff = finalTotal - exactTotal;
-
-    return { 
-      subtotal, 
-      discountAmount, 
-      taxableAmount, 
-      cgst, 
-      sgst, 
-      finalTotal, 
-      roundoff 
-    };
+    return { subtotal, discountAmount, taxableAmount, cgst, sgst, finalTotal, roundoff };
   }, [returnSaleData]);
 
   const preExistingSellers = useMemo(() => {
     const names = purchaseInvoices.map(inv => inv.sellerName).filter(Boolean);
     const uniqueNames = [...new Set(names)];
-    if (uniqueNames.length === 0) {
-      return ['Wholesale Market', 'Direct Distributor', 'Local Supplier'];
-    }
+    if (uniqueNames.length === 0) return ['Wholesale Market', 'Direct Distributor', 'Local Supplier'];
     return uniqueNames;
   }, [purchaseInvoices]);
 
   // =========================================
   // --- Real-time Search Filter Pipelines ---
   // =========================================
+  const safeSearch = (searchQuery || '').toLowerCase();
+  const safePurchaseSearch = (purchaseSearchQuery || '').toLowerCase();
+  const safeCustomerSearch = (activeTab?.customerSearch || '').toLowerCase();
+  const safeSellerSearch = (purchaseSellerName || '').toLowerCase();
+  const safeReceiptSearch = (receiptSearch || '').toLowerCase();
+
   const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (p.hsnCode && p.hsnCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    formatProductId(p.id).toLowerCase().includes(searchQuery.toLowerCase())
+    (p.name && p.name.toLowerCase().includes(safeSearch)) ||
+    (p.hsnCode && p.hsnCode.toLowerCase().includes(safeSearch)) ||
+    formatProductId(p.id).toLowerCase().includes(safeSearch)
   )
 
   const filteredCustomers = customers.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.mobile && c.mobile.includes(searchQuery)) ||
-    (c.city && c.city.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (c.location && c.location.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (c.gstno && c.gstno.toLowerCase().includes(searchQuery.toLowerCase()))
+    (c.name && c.name.toLowerCase().includes(safeSearch)) ||
+    (c.mobile && c.mobile.includes(safeSearch)) ||
+    (c.city && c.city.toLowerCase().includes(safeSearch)) ||
+    (c.location && c.location.toLowerCase().includes(safeSearch)) ||
+    (c.gstno && c.gstno.toLowerCase().includes(safeSearch))
   )
 
   const dropdownFilteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    (c.location && c.location.toLowerCase().includes(customerSearch.toLowerCase())) ||
-    (c.city && c.city.toLowerCase().includes(customerSearch.toLowerCase()))
+    (c.name && c.name.toLowerCase().includes(safeCustomerSearch)) ||
+    (c.location && c.location.toLowerCase().includes(safeCustomerSearch)) ||
+    (c.city && c.city.toLowerCase().includes(safeCustomerSearch))
+  )
+
+  const receiptFilteredCustomers = customers.filter(c => 
+    (c.name && c.name.toLowerCase().includes(safeReceiptSearch)) ||
+    (c.mobile && c.mobile.includes(safeReceiptSearch)) ||
+    (c.city && c.city.toLowerCase().includes(safeReceiptSearch))
   )
 
   const dropdownFilteredSellers = preExistingSellers.filter(s => 
-    s.toLowerCase().includes(purchaseSellerName.toLowerCase())
+    s && s.toLowerCase().includes(safeSellerSearch)
   )
 
   const filteredInvoices = invoices.filter(i =>
-    i.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    formatInvoiceId(i.id).toLowerCase().includes(searchQuery.toLowerCase())
+    (i.customerName && i.customerName.toLowerCase().includes(safeSearch)) || 
+    formatInvoiceId(i.id).toLowerCase().includes(safeSearch)
   )
 
   const filteredPurchaseInvoices = purchaseInvoices.filter(i =>
-    i.sellerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.id.toString().includes(searchQuery) ||
-    (i.customInvoiceId && i.customInvoiceId.toLowerCase().includes(searchQuery.toLowerCase()))
+    (i.sellerName && i.sellerName.toLowerCase().includes(safePurchaseSearch)) ||
+    (i.id && i.id.toString().includes(safePurchaseSearch)) ||
+    (i.customInvoiceId && i.customInvoiceId.toLowerCase().includes(safePurchaseSearch))
+  )
+
+  const filteredReceipts = receipts.filter(r => 
+    (r.customerName && r.customerName.toLowerCase().includes(safeSearch)) ||
+    (r.paymentMode && r.paymentMode.toLowerCase().includes(safeSearch)) ||
+    formatReceiptId(r.id).toLowerCase().includes(safeSearch)
   )
 
   const filteredInventoryHistory = inventoryHistory.filter(log => 
-    log.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    log.actionType.toLowerCase().includes(searchQuery.toLowerCase())
+    (log.productName && log.productName.toLowerCase().includes(safeSearch)) ||
+    (log.actionType && log.actionType.toLowerCase().includes(safeSearch))
   )
 
   const filteredInvoiceHistory = invoiceHistory.filter(log => 
-    log.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    formatInvoiceId(log.originalInvoiceId).toLowerCase().includes(searchQuery.toLowerCase())
+    (log.customerName && log.customerName.toLowerCase().includes(safeSearch)) ||
+    formatInvoiceId(log.originalInvoiceId).toLowerCase().includes(safeSearch)
   )
 
-  // =========================================
-  // --- Micro-Pagination Logic Controllers ---
-  // =========================================
+  const filteredPurchaseInvoiceHistory = purchaseInvoiceHistory.filter(log => 
+    (log.sellerName && log.sellerName.toLowerCase().includes(safeSearch)) ||
+    formatPurchaseInvoiceId(log.originalPurchaseInvoiceId).toLowerCase().includes(safeSearch)
+  )
+
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
   
@@ -457,161 +537,172 @@ export default function App() {
   const paginatedCustomers = filteredCustomers.slice(indexOfFirstItem, indexOfLastItem)
   const paginatedInvoices = filteredInvoices.slice(indexOfFirstItem, indexOfLastItem)
   const paginatedPurchaseInvoices = filteredPurchaseInvoices.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem)
   const paginatedInventoryHistory = filteredInventoryHistory.slice(indexOfFirstItem, indexOfLastItem)
   const paginatedInvoiceHistory = filteredInvoiceHistory.slice(indexOfFirstItem, indexOfLastItem)
+  const paginatedPurchaseInvoiceHistory = filteredPurchaseInvoiceHistory.slice(indexOfFirstItem, indexOfLastItem)
 
-  // =========================================
-  // --- Network API Interaction Loaders ---
-  // =========================================
-  function loadProducts() {
-    productService.getProducts().then(data => 
-      setProducts(Array.isArray(data) ? data : [])
-    )
-  }
-
-  function loadCustomers() {
-    customerService.getCustomers().then(data => 
-      setCustomers(Array.isArray(data) ? data : [])
-    )
-  }
-
-  function loadInvoices() {
-    invoiceService.getInvoices().then(data => {
-      setInvoices((data || []).sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate)))
-    })
-  }
-
-  function loadPurchaseInvoices() {
-    purchaseInvoiceService.getPurchaseInvoices().then(data => {
-      setPurchaseInvoices((data || []).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)))
-    })
-  }
-
+  function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])) }
+  function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])) }
+  // FIXED: Ensure Sales List sorts strictly by Invoice ID (newest to oldest)
+  function loadInvoices() { invoiceService.getInvoices().then(data => setInvoices((data || []).sort((a, b) => b.id - a.id))) }
+  function loadPurchaseInvoices() { purchaseInvoiceService.getPurchaseInvoices().then(data => setPurchaseInvoices((data || []).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)))) }
+  function loadReceipts() { receiptService.getReceipts().then(data => setReceipts(Array.isArray(data) ? data : [])) }
   function loadHistory() {
-    historyService.getInventoryHistory().then(data => {
-      setInventoryHistory(Array.isArray(data) ? data : [])
-    })
-    historyService.getInvoiceHistory().then(data => {
-      setInvoiceHistory(Array.isArray(data) ? data : [])
-    })
+    historyService.getInventoryHistory().then(data => setInventoryHistory(Array.isArray(data) ? data : []))
+    historyService.getInvoiceHistory().then(data => setInvoiceHistory(Array.isArray(data) ? data : []))
+    historyService.getPurchaseInvoiceHistory().then(data => setPurchaseInvoiceHistory(Array.isArray(data) ? data : []))
   }
 
   // =========================================
   // --- Outbound Sales Process Handlers ---
   // =========================================
-  function addToCart(product) {
-    if (product.stock <= 0) {
-      return window.alert(`Sorry, ${product.name} is currently out of stock!`)
+  
+  // Tab Controls
+  const openNewTab = () => {
+    const newTab = generateNewTab(`Bill ${salesTabs.length + 1}`);
+    setSalesTabs([...salesTabs, newTab]);
+    setActiveTabId(newTab.id);
+  }
+
+  const closeTab = (idToClose, e) => {
+    e.stopPropagation();
+    if (salesTabs.length === 1) {
+      const reset = generateNewTab();
+      setSalesTabs([reset]);
+      setActiveTabId(reset.id);
+      return;
     }
-    setCart(current => {
-      const existing = current.find(item => item.id === product.id)
-      if (existing) {
-        if (existing.quantity >= product.stock) {
-          window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`)
-          return current
-        }
-        return current.map(item => 
-          item.id === product.id 
-            ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } 
-            : item
-        )
+    const newTabs = salesTabs.filter(t => t.id !== idToClose);
+    setSalesTabs(newTabs);
+    if (activeTabId === idToClose) setActiveTabId(newTabs[newTabs.length - 1].id);
+  }
+
+  // Draft Controls
+  const saveToDrafts = () => {
+    if (activeTab.cart.length === 0 && !activeTab.activeCustomer) {
+      return window.alert("Cannot save an empty tab to drafts.");
+    }
+    const draftName = window.prompt(
+      "Enter a name to easily identify this draft:", 
+      activeTab.activeCustomer ? activeTab.activeCustomer.name : `Draft ${new Date().toLocaleTimeString()}`
+    );
+    if (draftName === null) return; 
+
+    const newDraft = { ...activeTab, draftId: Date.now(), draftName, savedAt: new Date().toISOString() };
+    setDrafts([...drafts, newDraft]);
+
+    if (salesTabs.length === 1) {
+      const reset = generateNewTab();
+      setSalesTabs([reset]);
+      setActiveTabId(reset.id);
+    } else {
+      const newTabs = salesTabs.filter(t => t.id !== activeTabId);
+      setSalesTabs(newTabs);
+      setActiveTabId(newTabs[newTabs.length - 1].id);
+    }
+    window.alert("Successfully saved to Drafts!");
+  }
+
+  const resumeDraft = (draftToResume) => {
+    const resumedTab = { ...draftToResume, id: Date.now() }; 
+    setSalesTabs([...salesTabs, resumedTab]);
+    setActiveTabId(resumedTab.id);
+    setDrafts(drafts.filter(d => d.draftId !== draftToResume.draftId));
+    setView('list');
+  }
+
+  const deleteDraft = (draftId) => {
+    if (window.confirm("Are you sure you want to delete this draft?")) {
+      setDrafts(drafts.filter(d => d.draftId !== draftId));
+    }
+  }
+
+  function addToCart(product) {
+    if (product.stock <= 0) return window.alert(`Sorry, ${product.name} is currently out of stock!`)
+    
+    const existing = activeTab.cart.find(item => item.id === product.id)
+    let newCart;
+    if (existing) {
+      if (existing.quantity >= product.stock) {
+        return window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`)
       }
-      return [...current, { ...product, quantity: 1 }]
-    })
+      newCart = activeTab.cart.map(item => item.id === product.id ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } : item)
+    } else {
+      newCart = [...activeTab.cart, { ...product, quantity: 1 }]
+    }
+    updateActiveTab({ cart: newCart })
   }
 
   function updateQuantity(index, val) {
-    setCart(current => {
-      const item = current[index]
-      if (val === '') {
-        return current.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm)
-      }
-      const quantity = Number(val)
-      if (quantity < 0) return current
-      if (quantity > item.stock) {
-        window.alert(`Cannot exceed available inventory (${item.stock} left).`)
-        return current
-      }
-      return current.map((itm, idx) => idx === index ? { ...itm, quantity } : itm)
-    })
+    const item = activeTab.cart[index]
+    if (val === '') {
+      const newCart = activeTab.cart.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm);
+      return updateActiveTab({ cart: newCart });
+    }
+    const quantity = Number(val)
+    if (quantity < 0) return
+    if (quantity > item.stock) {
+      return window.alert(`Cannot exceed available inventory (${item.stock} left).`)
+    }
+    const newCart = activeTab.cart.map((itm, idx) => idx === index ? { ...itm, quantity } : itm)
+    updateActiveTab({ cart: newCart })
   }
 
   function removeCartItem(index) {
-    setCart(current => current.filter((_, idx) => idx !== index))
+    updateActiveTab({ cart: activeTab.cart.filter((_, idx) => idx !== index) })
   }
 
   function proceedToPayment() {
-    if (!cart.length) {
-      return window.alert('Cart is empty.')
-    }
-    if (!activeCustomer) {
-      return window.alert('Please select a customer from the top dropdown before proceeding to payment.')
-    }
+    if (!activeTab.cart.length) return window.alert('Cart is empty.')
+    if (!activeTab.activeCustomer) return window.alert('Please select a customer before proceeding to payment.')
     setView('payment-screen')
   }
 
   function submitFinalSale() {
-    const finalPaymentMethod = isPayLater ? 'Pay Later' : paymentMethod;
+    const finalPaymentMethod = activeTab.isPayLater ? 'Pay Later' : activeTab.paymentMethod;
 
-    if (editingInvoiceId) {
+    if (activeTab.editingInvoiceId) {
       invoiceService.update(
-        editingInvoiceId,
-        activeCustomer.name,
-        cart,
-        billingDetails.subtotal, 
-        discountPercent,
-        billingDetails.cgst,
-        billingDetails.sgst,
-        billingDetails.finalTotal,
+        activeTab.editingInvoiceId,
+        activeTab.activeCustomer.name,
+        activeTab.cart,
+        activeBillingDetails.subtotal, 
+        activeTab.discountPercent,
+        activeBillingDetails.cgst,
+        activeBillingDetails.sgst,
+        activeBillingDetails.finalTotal,
         finalPaymentMethod,
-        saleDate
+        activeTab.saleDate
       ).then(invoice => {
         window.alert(`Sale ${formatInvoiceId(invoice.id)} updated successfully!`)
-        resetSalesState()
+        closeTab(activeTabId, { stopPropagation: () => {} })
+        setView('invoices')
+        loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
       }).catch(err => window.alert('Failed to update sale. ' + err.message))
     } else {
       invoiceService.create(
-        activeCustomer.name,
-        cart,
-        billingDetails.subtotal, 
-        discountPercent,
-        billingDetails.cgst,
-        billingDetails.sgst,
-        billingDetails.finalTotal,
+        activeTab.activeCustomer.name,
+        activeTab.cart,
+        activeBillingDetails.subtotal, 
+        activeTab.discountPercent,
+        activeBillingDetails.cgst,
+        activeBillingDetails.sgst,
+        activeBillingDetails.finalTotal,
         finalPaymentMethod,
-        saleDate
+        activeTab.saleDate
       ).then(invoice => {
         window.alert(`Sale ${formatInvoiceId(invoice.id)} completed successfully!`)
-        resetSalesState()
+        closeTab(activeTabId, { stopPropagation: () => {} })
+        setView('invoices')
+        loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
       }).catch(err => window.alert('Failed to complete sale. ' + err.message))
     }
   }
 
-  function resetSalesState() {
-    setCart([])
-    setActiveCustomer(null)
-    setCustomerSearch('')
-    setDiscountPercent(0)
-    setTaxPercent(5)
-    setPaymentMethod('Cash')
-    setIsPayLater(false)
-    setSaleDate(new Date().toISOString().split('T')[0])
-    setEditingInvoiceId(null)
-    setView('invoices')
-    loadProducts()
-    loadInvoices()
-    loadHistory()
-  }
-
   function cancelSale() {
     if (window.confirm("Are you sure you want to cancel the current sale/edit?")) {
-      setCart([])
-      setActiveCustomer(null)
-      setCustomerSearch('')
-      setDiscountPercent(0)
-      setTaxPercent(5)
-      setEditingInvoiceId(null)
-      setIsPayLater(false)
+      closeTab(activeTabId, { stopPropagation: () => {} })
       setView('list')
     }
   }
@@ -624,52 +715,39 @@ export default function App() {
   }
 
   function handleEditSale(invoice) {
-    setEditingInvoiceId(invoice.id)
-    setActiveCustomer({ name: invoice.customerName })
-    setCustomerSearch(invoice.customerName)
-    setDiscountPercent(invoice.discountPercent || 0)
-    
-    if (invoice.paymentMethod === 'Pay Later') {
-      setIsPayLater(true);
-      setPaymentMethod('Cash');
-    } else {
-      setIsPayLater(false);
-      setPaymentMethod(invoice.paymentMethod || 'Cash');
-    }
-    
-    const localDateString = invoice.orderDate 
-      ? invoice.orderDate.split('T')[0] 
-      : new Date().toISOString().split('T')[0];
-    
-    setSaleDate(localDateString)
-
     const subtotal = invoice.grossTotal || 0;
     const discountAmt = subtotal * ((invoice.discountPercent || 0) / 100);
     const taxableAmt = subtotal - discountAmt;
     const totalTaxPercent = taxableAmt > 0 ? ((invoice.cgst + invoice.sgst) / taxableAmt) * 100 : 5;
     
-    setTaxPercent(Math.round(totalTaxPercent))
-
-    setCart(invoice.items.map(item => ({
+    const editTab = generateNewTab(`Editing ${formatInvoiceId(invoice.id)}`);
+    editTab.editingInvoiceId = invoice.id;
+    editTab.activeCustomer = { name: invoice.customerName };
+    editTab.customerSearch = invoice.customerName;
+    editTab.discountPercent = invoice.discountPercent || 0;
+    editTab.taxPercent = Math.round(totalTaxPercent);
+    editTab.isPayLater = invoice.paymentMethod === 'Pay Later';
+    editTab.paymentMethod = editTab.isPayLater ? 'Cash' : (invoice.paymentMethod || 'Cash');
+    editTab.saleDate = invoice.orderDate ? invoice.orderDate.split('T')[0] : new Date().toISOString().split('T')[0];
+    editTab.cart = invoice.items.map(item => ({
       ...item.product,
       id: item.product.id,
       price: item.price,
       quantity: item.quantity,
       originalQuantity: item.quantity, 
       stock: (item.product.stock || 0) + item.quantity 
-    })))
-    
-    setView('list')
+    }));
+
+    setSalesTabs([...salesTabs, editTab]);
+    setActiveTabId(editTab.id);
+    setView('list');
   }
 
   function handleInitiateReturn(invoice) {
     if (invoice.isReturn) return window.alert("This is already a returned invoice!");
     setReturnSaleData({
       ...invoice,
-      returnItems: invoice.items.map(item => ({
-        ...item,
-        returnQty: 0
-      }))
+      returnItems: invoice.items.map(item => ({ ...item, returnQty: 0 }))
     });
     setView('return-sale');
   }
@@ -683,30 +761,18 @@ export default function App() {
 
   function submitReturn() {
     const itemsToReturn = returnSaleData.returnItems.filter(i => (Number(i.returnQty) || 0) > 0);
-    
-    if (itemsToReturn.length === 0) {
-      return window.alert("Please select at least one item to return.");
-    }
-    
-    if (!window.confirm(`Process return for ${itemsToReturn.length} items? This will generate a negative bill and restore inventory.`)) {
-      return;
-    }
+    if (itemsToReturn.length === 0) return window.alert("Please select at least one item to return.");
+    if (!window.confirm(`Process return for ${itemsToReturn.length} items? This will generate a negative bill and restore inventory.`)) return;
 
     invoiceService.returnInvoice(
       returnSaleData.id,
       itemsToReturn.map(i => ({ id: i.product.id, quantity: Number(i.returnQty), price: i.price })),
-      returnMath.subtotal,
-      returnSaleData.discountPercent,
-      returnMath.cgst,
-      returnMath.sgst,
-      returnMath.finalTotal
+      returnMath.subtotal, returnSaleData.discountPercent, returnMath.cgst, returnMath.sgst, returnMath.finalTotal
     ).then(() => {
       window.alert("Return processed successfully!");
       setReturnSaleData(null);
       setView('invoices');
-      loadInvoices();
-      loadProducts();
-      loadHistory();
+      loadInvoices(); loadProducts(); loadHistory(); loadCustomers();
     }).catch(err => window.alert("Failed to process return: " + err.message));
   }
 
@@ -717,11 +783,7 @@ export default function App() {
     setPurchaseCart(current => {
       const existing = current.find(item => item.id === product.id)
       if (existing) {
-        return current.map(item => 
-          item.id === product.id 
-            ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } 
-            : item
-        )
+        return current.map(item => item.id === product.id ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } : item)
       }
       return [...current, { ...product, quantity: 1, purchasePrice: product.purchasePrice || 0 }]
     })
@@ -729,9 +791,7 @@ export default function App() {
 
   function updatePurchaseQuantity(index, val) {
     setPurchaseCart(current => {
-      if (val === '') {
-        return current.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm)
-      }
+      if (val === '') return current.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm)
       const quantity = Number(val)
       if (quantity < 0) return current
       return current.map((itm, idx) => idx === index ? { ...itm, quantity } : itm)
@@ -740,71 +800,58 @@ export default function App() {
 
   function updatePurchasePrice(index, price) {
     if (price < 0) return
-    setPurchaseCart(current => 
-      current.map((itm, idx) => 
-        idx === index 
-          ? { ...itm, purchasePrice: price } 
-          : itm
-      )
-    )
+    setPurchaseCart(current => current.map((itm, idx) => idx === index ? { ...itm, purchasePrice: price } : itm))
   }
 
   function removePurchaseCartItem(index) {
-    setPurchaseCart(current => 
-      current.filter((_, idx) => idx !== index)
-    )
+    setPurchaseCart(current => current.filter((_, idx) => idx !== index))
   }
 
   function proceedToPurchaseSummary() {
-    if (!purchaseCart.length) {
-      return window.alert('Purchase cart is empty.')
-    }
-    if (!purchaseSellerName.trim()) {
-      return window.alert('Please select or enter a Seller Name before proceeding.')
-    }
-    if (!customInvoiceId.trim()) {
-      return window.alert('Please enter the Purchase Invoice ID given by the seller.')
-    }
-    if (!purchaseDate) {
-      return window.alert('Please select the Date of Purchase.')
-    }
+    if (!purchaseCart.length) return window.alert('Purchase cart is empty.')
+    if (!purchaseSellerName.trim()) return window.alert('Please select or enter a Seller Name before proceeding.')
+    if (!customInvoiceId.trim()) return window.alert('Please enter the Purchase Invoice ID given by the seller.')
+    if (!purchaseDate) return window.alert('Please select the Date of Purchase.')
     setView('purchase-summary-screen')
   }
 
   function submitPurchaseCart() {
-    purchaseInvoiceService.create(
-      purchaseSellerName,
-      purchaseDate,
-      customInvoiceId,
-      purchaseCart,
-      purchaseBillingDetails.subtotal, 
-      purchaseDiscountPercent,
-      purchaseBillingDetails.cgst,
-      purchaseBillingDetails.sgst,
-      purchaseBillingDetails.finalTotal
-    ).then(() => {
-      window.alert(`Purchase Invoice recorded successfully! Stock has been updated.`)
-      setPurchaseCart([])
-      setPurchaseSellerName('')
-      setCustomInvoiceId('')
-      setPurchaseDate(new Date().toISOString().split('T')[0])
-      setPurchaseDiscountPercent(0)
-      setPurchaseTaxPercent(5)
-      setView('purchases-list')
-      loadProducts()
-      loadPurchaseInvoices()
-      loadHistory()
-    }).catch(err => window.alert('Failed to complete purchase. ' + err.message))
+    if (editingPurchaseInvoiceId) {
+      purchaseInvoiceService.update(
+        editingPurchaseInvoiceId, purchaseSellerName, purchaseDate, customInvoiceId, purchaseCart,
+        purchaseBillingDetails.subtotal, purchaseDiscountPercent, purchaseBillingDetails.cgst,
+        purchaseBillingDetails.sgst, purchaseBillingDetails.finalTotal
+      ).then(() => {
+        window.alert(`Purchase Invoice updated successfully!`)
+        resetPurchaseState()
+      }).catch(err => window.alert('Failed to update purchase. ' + err.message))
+    } else {
+      purchaseInvoiceService.create(
+        purchaseSellerName, purchaseDate, customInvoiceId, purchaseCart,
+        purchaseBillingDetails.subtotal, purchaseDiscountPercent, purchaseBillingDetails.cgst,
+        purchaseBillingDetails.sgst, purchaseBillingDetails.finalTotal
+      ).then(() => {
+        window.alert(`Purchase Invoice recorded successfully!`)
+        resetPurchaseState()
+      }).catch(err => window.alert('Failed to complete purchase. ' + err.message))
+    }
+  }
+
+  function resetPurchaseState() {
+    setPurchaseCart([])
+    setPurchaseSellerName('')
+    setCustomInvoiceId('')
+    setPurchaseDate(new Date().toISOString().split('T')[0])
+    setPurchaseDiscountPercent(0)
+    setPurchaseTaxPercent(5)
+    setEditingPurchaseInvoiceId(null)
+    setView('purchases-list')
+    loadProducts(); loadPurchaseInvoices(); loadHistory();
   }
 
   function cancelPurchase() {
     if (window.confirm("Are you sure you want to cancel the current purchase entry?")) {
-      setPurchaseCart([])
-      setPurchaseSellerName('')
-      setCustomInvoiceId('')
-      setPurchaseDiscountPercent(0)
-      setPurchaseTaxPercent(5)
-      setView('purchase-new')
+      resetPurchaseState()
     }
   }
 
@@ -813,6 +860,54 @@ export default function App() {
       setSelectedPurchaseInvoice(data)
       setView('purchase-invoice-details')
     })
+  }
+
+  function handleEditPurchase(invoice) {
+    setEditingPurchaseInvoiceId(invoice.id);
+    setPurchaseSellerName(invoice.sellerName);
+    setCustomInvoiceId(invoice.customInvoiceId || '');
+    setPurchaseDate(invoice.purchaseDate ? invoice.purchaseDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setPurchaseDiscountPercent(invoice.discountPercent || 0);
+
+    const subtotal = invoice.grossTotal || 0;
+    const discountAmt = subtotal * ((invoice.discountPercent || 0) / 100);
+    const taxableAmt = subtotal - discountAmt;
+    const totalTaxPercent = taxableAmt > 0 ? ((invoice.cgst + invoice.sgst) / taxableAmt) * 100 : 5;
+    
+    setPurchaseTaxPercent(Math.round(totalTaxPercent));
+
+    setPurchaseCart(invoice.items.map(item => ({
+      ...item.product,
+      id: item.product.id,
+      purchasePrice: item.purchasePrice,
+      quantity: item.quantity,
+      originalQuantity: item.quantity
+    })));
+
+    setView('purchase-new');
+  }
+
+  // =========================================
+  // --- Customer Receipts Processing ---
+  // =========================================
+  function handleGenerateReceipt() {
+    if (!receiptCustomer) return window.alert("Please select a customer.");
+    if (!receiptAmount || Number(receiptAmount) <= 0) return window.alert("Please enter a valid amount.");
+    
+    // UPDATED: Now passing receiptDiscount and receiptDate to the backend!
+    receiptService.create(receiptCustomer.id, receiptAmount, receiptDiscount, receiptMethod, receiptDate, receiptRemarks)
+      .then(() => {
+        window.alert(`Receipt securely logged! Total Ledger Credit applied for ${receiptCustomer.name}.`);
+        loadCustomers();
+        loadReceipts(); 
+        setReceiptCustomer(null);
+        setReceiptAmount('');
+        setReceiptDiscount('');
+        setReceiptDate(new Date().toISOString().split('T')[0]);
+        setReceiptSearch('');
+        setReceiptRemarks('Payment received with thanks.');
+      })
+      .catch(err => window.alert("Failed to record receipt: " + err.message));
   }
 
   // =========================================
@@ -832,30 +927,15 @@ export default function App() {
     if (isEditMode) {
       const existingProduct = products.find(p => p.id === editingProductId)
       productService.updateProduct(
-        editingProductId, 
-        name, 
-        purchasePrice, 
-        mrp,
-        price, 
-        existingProduct ? existingProduct.stock : 0,
-        hsnCode
+        editingProductId, name, purchasePrice, mrp, price, existingProduct ? existingProduct.stock : 0, hsnCode
       ).then(() => { 
-        loadProducts()
-        loadHistory()
-        closeProductModal() 
+        loadProducts(); loadHistory(); closeProductModal() 
       })
     } else {
       productService.addProduct(
-        name, 
-        purchasePrice, 
-        mrp,
-        price, 
-        parseInt(productForm.stock, 10) || 0,
-        hsnCode
+        name, purchasePrice, mrp, price, parseInt(productForm.stock, 10) || 0, hsnCode
       ).then(() => { 
-        loadProducts()
-        loadHistory()
-        closeProductModal() 
+        loadProducts(); loadHistory(); closeProductModal() 
       })
     }
   }
@@ -863,22 +943,14 @@ export default function App() {
   function handleDeleteProduct(id, name) {
     if (window.confirm(`Are you sure you want to completely delete "${name}"? This cannot be undone.`)) { 
       productService.deleteProduct(id).then(() => {
-        loadProducts();
-        closeProductModal();
+        loadProducts(); closeProductModal();
       }) 
     }
   }
 
   function closeProductModal() {
     setShowProductModal(false)
-    setProductForm({ 
-      name: '', 
-      hsnCode: '', 
-      purchasePrice: '', 
-      mrp: '', 
-      price: '', 
-      stock: '' 
-    })
+    setProductForm({ name: '', hsnCode: '', purchasePrice: '', mrp: '', price: '', stock: '' })
   }
 
   function openInventoryModal(product) {
@@ -899,31 +971,25 @@ export default function App() {
     
     const product = products.find(p => p.id === editingInventoryId)
     productService.updateProduct(
-      product.id, 
-      product.name, 
-      product.purchasePrice,
-      product.mrp || product.price, 
-      product.price, 
-      newStock,
-      product.hsnCode
+      product.id, product.name, product.purchasePrice, product.mrp || product.price, product.price, newStock, product.hsnCode
     ).then(() => { 
-      loadProducts()
-      loadHistory()
-      closeInventoryModal() 
+      loadProducts(); loadHistory(); closeInventoryModal() 
     })
   }
 
   function handleSaveCustomer() {
-    const { name, gstno, mobile, city, location, balance, state } = customerForm
+    const { name, gstno, mobile, city, location, state } = customerForm
     if (!name?.trim()) return window.alert('Name is required')
     
+    // Security Fix: Safely preserve existing balance without showing it in the edit form!
+    const existingBalance = isCustomerEditMode ? (customers.find(c => c.id === editingCustomerId)?.balance || 0) : 0;
+
     const action = isCustomerEditMode
-      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city, location, balance, state)
-      : customerService.addCustomer(name, gstno, mobile, city, location, balance, state)
+      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city, location, existingBalance, state)
+      : customerService.addCustomer(name, gstno, mobile, city, location, existingBalance, state)
       
     action.then(() => { 
-      loadCustomers()
-      closeCustomerModal() 
+      loadCustomers(); closeCustomerModal() 
     })
   }
 
@@ -931,10 +997,6 @@ export default function App() {
     if (window.confirm(`Are you sure you want to completely delete customer "${name}"? This cannot be undone.`)) {
       customerService.deleteCustomer(id).then(() => {
         loadCustomers()
-        if (activeCustomer?.id === id) { 
-          setActiveCustomer(null)
-          setCustomerSearch('') 
-        }
         closeCustomerModal();
       })
     }
@@ -942,15 +1004,7 @@ export default function App() {
 
   function closeCustomerModal() {
     setShowCustomerModal(false)
-    setCustomerForm({ 
-      name: '', 
-      gstno: '', 
-      mobile: '', 
-      city: '', 
-      location: '', 
-      balance: 0, 
-      state: '' 
-    })
+    setCustomerForm({ name: '', gstno: '', mobile: '', city: '', location: '', state: '' })
   }
 
   // =========================================
@@ -995,18 +1049,10 @@ export default function App() {
 
   const handleExportCustomers = () => {
     if (customers.length === 0) return window.alert("No customers to export.");
-    
     const dataToExport = customers.map(c => ({
-      'Customer ID': c.id,
-      'Name': c.name,
-      'Phone Number': c.mobile,
-      'City': c.city,
-      'Location': c.location,
-      'State': c.state,
-      'GST': c.gstno,
-      'Balance': c.balance
+      'Customer ID': c.id, 'Name': c.name, 'Phone Number': c.mobile, 'City': c.city,
+      'Location': c.location, 'State': c.state, 'GST': c.gstno, 'Balance': c.balance
     }));
-
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Customers");
@@ -1048,8 +1094,7 @@ export default function App() {
         productService.addProductsBulk(formattedProducts)
           .then(() => {
             window.alert(`Successfully imported/updated ${formattedProducts.length} products!`);
-            loadProducts();
-            loadHistory(); 
+            loadProducts(); loadHistory(); 
           })
           .catch(err => window.alert("Failed to import products: " + err.message));
       } catch (err) {
@@ -1062,17 +1107,10 @@ export default function App() {
 
   const handleExportProducts = () => {
     if (products.length === 0) return window.alert("No products to export.");
-    
     const dataToExport = products.map(p => ({
-      'Product ID': formatProductId(p.id),
-      'Name': p.name,
-      'HSN Code': p.hsnCode,
-      'Purchase Price': p.purchasePrice,
-      'MRP': p.mrp || p.price,
-      'Selling Price': p.price,
-      'Stock': p.stock
+      'Product ID': formatProductId(p.id), 'Name': p.name, 'HSN Code': p.hsnCode,
+      'Purchase Price': p.purchasePrice, 'MRP': p.mrp || p.price, 'Selling Price': p.price, 'Stock': p.stock
     }));
-
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
@@ -1090,7 +1128,7 @@ export default function App() {
         <tr key={idx}>
           <td className="fw-bold">{item.name}</td>
           <td>{item.qty}</td>
-          <td className="text-success">{formatMoney(item.price)}</td>
+          <td className="text-success">{formatMoney(item.price || item.purchasePrice)}</td>
         </tr>
       ));
     } catch (e) {
@@ -1124,20 +1162,8 @@ export default function App() {
             Showing {totalItems === 0 ? 0 : indexOfFirstItem + 1} - {Math.min(indexOfLastItem, totalItems)} of {totalItems}
           </span>
           <div className="btn-group">
-            <button
-              className="btn btn-secondary"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => p - 1)}
-            >
-              Prev
-            </button>
-            <button
-              className="btn btn-secondary"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(p => p + 1)}
-            >
-              Next
-            </button>
+            <button className="btn btn-secondary" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>Prev</button>
+            <button className="btn btn-secondary" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)}>Next</button>
           </div>
         </div>
       </div>
@@ -1155,27 +1181,13 @@ export default function App() {
           {loginError && <div className="text-danger mb-0 text-center">{loginError}</div>}
           <div className="form-group">
             <label className="form-label">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="form-control"
-              required
-            />
+            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="form-control" required />
           </div>
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="form-control"
-              required
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="form-control" required />
           </div>
-          <button type="submit" className="btn btn-primary btn-checkout">
-            Login to Dashboard
-          </button>
+          <button type="submit" className="btn btn-primary btn-checkout">Login to Dashboard</button>
         </form>
       </div>
     );
@@ -1190,56 +1202,28 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-brand">Retailer App</div>
         <nav className="nav-links">
-          <button 
-            className={`nav-item ${view === 'home' ? 'active' : ''}`} 
-            onClick={() => setView('home')}
-          >
-            Home
-          </button>
+          <button className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => setView('home')}>Home</button>
 
           <div className="nav-dropdown">
-            <button className={`nav-item ${['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history'].includes(view) ? 'active' : ''}`}>
+            <button className={`nav-item ${['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history', 'drafts-list'].includes(view) ? 'active' : ''}`}>
               Sales ▼
             </button>
             <div className="nav-dropdown-content">
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => { setEditingInvoiceId(null); setView('list'); }}
-              >
-                New Sale
-              </button>
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('invoices')}
-              >
-                Sales List
-              </button>
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('edit-history')}
-              >
-                Edit History
-              </button>
+              <button className="nav-dropdown-item" onClick={() => { setView('list'); }}>New Sale</button>
+              <button className="nav-dropdown-item" onClick={() => setView('drafts-list')}>Saved Drafts ({drafts.length})</button>
+              <button className="nav-dropdown-item" onClick={() => setView('invoices')}>Sales List</button>
+              <button className="nav-dropdown-item" onClick={() => setView('edit-history')}>Edit History</button>
             </div>
           </div>
 
           <div className="nav-dropdown">
-            <button className={`nav-item ${['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details'].includes(view) ? 'active' : ''}`}>
+            <button className={`nav-item ${['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history'].includes(view) ? 'active' : ''}`}>
               Purchases ▼
             </button>
             <div className="nav-dropdown-content">
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('purchase-new')}
-              >
-                New Purchase
-              </button>
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('purchases-list')}
-              >
-                Purchase History
-              </button>
+              <button className="nav-dropdown-item" onClick={() => setView('purchase-new')}>New Purchase</button>
+              <button className="nav-dropdown-item" onClick={() => setView('purchases-list')}>Purchase History</button>
+              <button className="nav-dropdown-item" onClick={() => setView('purchase-edit-history')}>Purchase Edits</button>
             </div>
           </div>
 
@@ -1248,52 +1232,28 @@ export default function App() {
               Inventory ▼
             </button>
             <div className="nav-dropdown-content">
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('inventory')}
-              >
-                Stock Balance
-              </button>
-              <button 
-                className="nav-dropdown-item" 
-                onClick={() => setView('inventory-history')}
-              >
-                Inventory History
-              </button>
+              <button className="nav-dropdown-item" onClick={() => setView('inventory')}>Stock Balance</button>
+              <button className="nav-dropdown-item" onClick={() => setView('inventory-history')}>Inventory History</button>
+            </div>
+          </div>
+          
+          <div className="nav-dropdown">
+            <button className={`nav-item ${['receipts', 'receipts-list'].includes(view) ? 'active' : ''}`}>
+              Receipts ▼
+            </button>
+            <div className="nav-dropdown-content">
+              <button className="nav-dropdown-item" onClick={() => setView('receipts')}>New Receipt</button>
+              <button className="nav-dropdown-item" onClick={() => setView('receipts-list')}>Receipts History</button>
             </div>
           </div>
 
-          <button 
-            className={`nav-item ${view === 'customers-manage' ? 'active' : ''}`} 
-            onClick={() => setView('customers-manage')}
-          >
-            Customers
-          </button>
-
-          <button 
-            className={`nav-item ${view === 'products' ? 'active' : ''}`} 
-            onClick={() => setView('products')}
-          >
-            Products
-          </button>
-
-          <button 
-            className={`nav-item ${view === 'reports' ? 'active' : ''}`} 
-            onClick={() => setView('reports')}
-          >
-            Reports
-          </button>
+          <button className={`nav-item ${['ledgers', 'ledger-statement'].includes(view) ? 'active' : ''}`} onClick={() => setView('ledgers')}>Ledgers</button>
+          <button className={`nav-item ${view === 'customers-manage' ? 'active' : ''}`} onClick={() => setView('customers-manage')}>Customers</button>
+          <button className={`nav-item ${view === 'products' ? 'active' : ''}`} onClick={() => setView('products')}>Products</button>
+          <button className={`nav-item ${view === 'reports' ? 'active' : ''}`} onClick={() => setView('reports')}>Reports</button>
         </nav>
         
-        <button 
-          className="btn btn-danger logout-btn" 
-          onClick={() => { 
-            setIsLoggedIn(false); 
-            setUsername(''); 
-            setPassword(''); 
-            setView('home'); 
-          }}
-        >
+        <button className="btn btn-danger logout-btn" onClick={() => { setIsLoggedIn(false); setUsername(''); setPassword(''); setView('home'); }}>
           Logout
         </button>
       </header>
@@ -1324,10 +1284,7 @@ export default function App() {
                   </tbody>
                 </table>
                 {salesStats.daily.length > 5 && (
-                  <button 
-                    className="btn btn-secondary w-100" 
-                    onClick={() => setExpandedStats(p => ({ ...p, daily: !p.daily }))}
-                  >
+                  <button className="btn btn-secondary w-100" onClick={() => setExpandedStats(p => ({ ...p, daily: !p.daily }))}>
                     {expandedStats.daily ? 'View Less' : 'View More Past Days'}
                   </button>
                 )}
@@ -1350,10 +1307,7 @@ export default function App() {
                   </tbody>
                 </table>
                 {salesStats.weekly.length > 5 && (
-                  <button 
-                    className="btn btn-secondary w-100" 
-                    onClick={() => setExpandedStats(p => ({ ...p, weekly: !p.weekly }))}
-                  >
+                  <button className="btn btn-secondary w-100" onClick={() => setExpandedStats(p => ({ ...p, weekly: !p.weekly }))}>
                     {expandedStats.weekly ? 'View Less' : 'View More Past Weeks'}
                   </button>
                 )}
@@ -1376,10 +1330,7 @@ export default function App() {
                   </tbody>
                 </table>
                 {salesStats.monthly.length > 5 && (
-                  <button 
-                    className="btn btn-secondary w-100" 
-                    onClick={() => setExpandedStats(p => ({ ...p, monthly: !p.monthly }))}
-                  >
+                  <button className="btn btn-secondary w-100" onClick={() => setExpandedStats(p => ({ ...p, monthly: !p.monthly }))}>
                     {expandedStats.monthly ? 'View Less' : 'View More Past Months'}
                   </button>
                 )}
@@ -1402,10 +1353,7 @@ export default function App() {
                   </tbody>
                 </table>
                 {salesStats.yearly.length > 5 && (
-                  <button 
-                    className="btn btn-secondary w-100" 
-                    onClick={() => setExpandedStats(p => ({ ...p, yearly: !p.yearly }))}
-                  >
+                  <button className="btn btn-secondary w-100" onClick={() => setExpandedStats(p => ({ ...p, yearly: !p.yearly }))}>
                     {expandedStats.yearly ? 'View Less' : 'View More Past Years'}
                   </button>
                 )}
@@ -1415,9 +1363,7 @@ export default function App() {
             <div className="card">
               <div className="card-header">
                 <h3 className="card-title">Recent Transactions</h3>
-                <button className="btn btn-primary" onClick={() => setView('invoices')}>
-                  View All Sales
-                </button>
+                <button className="btn btn-primary" onClick={() => setView('invoices')}>View All Sales</button>
               </div>
               <div className="table-responsive">
                 <table className="block-table data-table">
@@ -1434,15 +1380,11 @@ export default function App() {
                       <tr key={inv.id} className="product-row available" onClick={() => handleViewInvoiceDetails(inv.id)}>
                         <td className="fw-bold cell-padded">{formatInvoiceId(inv.id)}</td>
                         <td className="cell-padded">{inv.customerName}</td>
-                        <td className={`price-text cell-padded ${inv.isReturn ? 'text-danger' : 'text-success'}`}>
-                          {formatMoney(inv.finalTotal || inv.totalAmount)}
-                        </td>
-                        <td className="cell-padded">{new Date(inv.orderDate).toLocaleString()}</td>
+                        <td className={`price-text cell-padded ${inv.isReturn ? 'text-danger' : 'text-success'}`}>{formatMoney(inv.finalTotal || inv.totalAmount)}</td>
+                        <td className="cell-padded">{new Date(inv.orderDate).toLocaleDateString('en-GB')}</td>
                       </tr>
                     ))}
-                    {invoices.length === 0 && (
-                      <tr><td colSpan="4" className="empty-state">No recent sales found.</td></tr>
-                    )}
+                    {invoices.length === 0 && <tr><td colSpan="4" className="empty-state">No recent sales found.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1454,79 +1396,43 @@ export default function App() {
         {view === 'reports' && (
           <div className="card transparent-card">
             <div className="reports-layout">
-              {/* CUSTOMERS COLUMN */}
               <div className="card mb-0">
-                <div className="card-header">
-                  <h2 className="card-title">Customer Data</h2>
-                </div>
+                <div className="card-header"><h2 className="card-title">Customer Data</h2></div>
                 <div className="dashboard-stats-grid single-col mt-1">
                   <div className="card stat-card report-card report-card-export">
                     <h4>Export Customers</h4>
-                    <p className="text-muted mb-1-5">
-                      Download a complete backup of all your customers and their ledger balances.
-                    </p>
+                    <p className="text-muted mb-1-5">Download a complete backup of all your customers and their ledger balances.</p>
                     <div className="mt-auto">
-                      <button className="btn btn-primary w-100" onClick={handleExportCustomers}>
-                        Download Excel Report
-                      </button>
+                      <button className="btn btn-primary w-100" onClick={handleExportCustomers}>Download Excel Report</button>
                     </div>
                   </div>
-
                   <div className="card stat-card report-card report-card-import">
                     <h4>Import & Update Customers</h4>
-                    <p className="text-muted mb-1-5">
-                      Upload Excel file to add new customers or update existing ones (matches by Phone Number or Name).
-                    </p>
+                    <p className="text-muted mb-1-5">Upload Excel file to add new customers or update existing ones (matches by Phone Number or Name).</p>
                     <div className="mt-auto">
-                      <input 
-                        type="file" 
-                        id="excel-upload-customers" 
-                        accept=".xlsx, .xls" 
-                        className="d-none"
-                        onChange={handleImportCustomers} 
-                      />
-                      <label htmlFor="excel-upload-customers" className="btn btn-success w-100 d-block cursor-pointer">
-                        Select Excel File
-                      </label>
+                      <input type="file" id="excel-upload-customers" accept=".xlsx, .xls" className="d-none" onChange={handleImportCustomers} />
+                      <label htmlFor="excel-upload-customers" className="btn btn-success w-100 d-block cursor-pointer">Select Excel File</label>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* PRODUCTS COLUMN */}
               <div className="card mb-0">
-                <div className="card-header">
-                  <h2 className="card-title">Product Inventory Data</h2>
-                </div>
+                <div className="card-header"><h2 className="card-title">Product Inventory Data</h2></div>
                 <div className="dashboard-stats-grid single-col mt-1">
                   <div className="card stat-card report-card report-card-export-prod">
                     <h4>Export Products</h4>
-                    <p className="text-muted mb-1-5">
-                      Download a complete list of your products, prices, and current stock levels.
-                    </p>
+                    <p className="text-muted mb-1-5">Download a complete list of your products, prices, and current stock levels.</p>
                     <div className="mt-auto">
-                      <button className="btn btn-warning w-100" onClick={handleExportProducts}>
-                        Download Excel Report
-                      </button>
+                      <button className="btn btn-warning w-100" onClick={handleExportProducts}>Download Excel Report</button>
                     </div>
                   </div>
-
                   <div className="card stat-card report-card report-card-import-prod">
                     <h4>Import & Update Products</h4>
-                    <p className="text-muted mb-1-5">
-                      Upload Excel file to add new products or update prices/stock (matches by Product ID or Name).
-                    </p>
+                    <p className="text-muted mb-1-5">Upload Excel file to add new products or update prices/stock (matches by Product ID or Name).</p>
                     <div className="mt-auto">
-                      <input 
-                        type="file" 
-                        id="excel-upload-products" 
-                        accept=".xlsx, .xls" 
-                        className="d-none"
-                        onChange={handleImportProducts} 
-                      />
-                      <label htmlFor="excel-upload-products" className="btn btn-purple w-100 d-block cursor-pointer">
-                        Select Excel File
-                      </label>
+                      <input type="file" id="excel-upload-products" accept=".xlsx, .xls" className="d-none" onChange={handleImportProducts} />
+                      <label htmlFor="excel-upload-products" className="btn btn-purple w-100 d-block cursor-pointer">Select Excel File</label>
                     </div>
                   </div>
                 </div>
@@ -1535,348 +1441,375 @@ export default function App() {
           </div>
         )}
 
-        {/* --- INTERFACE PATH TARGET: MERGED INBOUND PURCHASES --- */}
-        {view === 'purchase-new' && (
-          <div>
-            <div className="sales-control-panel">
-              <div className="cancel-btn-wrapper">
-                <button 
-                  className="btn btn-danger btn-sm" 
-                  onClick={cancelPurchase}
-                >
-                  ✕ Cancel Purchase
-                </button>
+        {/* --- INTERFACE PATH TARGET: LEDGERS --- */}
+        {view === 'ledgers' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Customer Ledgers (Outstanding Dues)</h2>
+              <input 
+                type="text" 
+                className="form-control header-search" 
+                placeholder="Search customers..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+            </div>
+            
+            <div className="dashboard-stats-grid single-col" style={{ marginTop: 0, marginBottom: '1.5rem' }}>
+              <div className="card stat-card" style={{ borderTopColor: '#ef4444', marginBottom: 0 }}>
+                <h4>Total Outstanding Market Dues</h4>
+                <div className="text-danger fw-bold fs-xxl mt-auto">
+                  {formatMoney(customers.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0))}
+                </div>
               </div>
-              <div className="sales-control-row">
-                <div className="input-group customer-dropdown-group">
-                  <label>Select or Enter Seller</label>
+            </div>
+
+            <div className="table-responsive">
+              <table className="block-table data-table">
+                <thead>
+                  <tr>
+                    <th>Customer Name</th>
+                    <th>Contact</th>
+                    <th>Location</th>
+                    <th>Current Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedCustomers.filter(c => c.balance > 0).length ? paginatedCustomers.filter(c => c.balance > 0).map(c => (
+                    <tr key={c.id} className="product-row available" onClick={() => {
+                      setViewingCustomerStatement(c);
+                      setView('ledger-statement');
+                    }}>
+                      <td className="fw-bold cell-padded">{c.name}</td>
+                      <td className="cell-padded">{c.mobile || 'N/A'}</td>
+                      <td className="cell-padded">{c.location || c.city || 'N/A'}</td>
+                      <td className="fw-bold cell-padded text-danger">
+                        {formatMoney(c.balance)} (To Receive)
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={4} className="empty-state">No customers with outstanding balances found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {renderPagination(filteredCustomers.filter(c => c.balance > 0).length)}
+          </div>
+        )}
+
+        {/* 🚀 NEW FULL PAGE: STRICT LEDGER CUSTOMER STATEMENT OF ACCOUNT */}
+        {view === 'ledger-statement' && viewingCustomerStatement && (
+          <div className="card transparent-card">
+            <div className="card-header header-actions bg-white" style={{ padding: '2rem', borderRadius: '8px', borderBottom: 'none' }}>
+              <h2 className="card-title">Statement of Account</h2>
+              <button 
+                className="btn btn-secondary action-buttons-right" 
+                onClick={() => { setViewingCustomerStatement(null); setView('ledgers'); }}
+              >
+                Back to Ledgers
+              </button>
+            </div>
+            
+            <div className="invoice-summary-grid bg-white" style={{ padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              <div className="info-block">
+                <span className="info-label">Customer Name</span>
+                <strong className="info-value text-primary fs-xxl">{viewingCustomerStatement.name}</strong>
+              </div>
+              <div className="info-block">
+                <span className="info-label">Contact / Location</span>
+                <strong className="info-value fs-lg">{viewingCustomerStatement.mobile || 'N/A'} <br/> {viewingCustomerStatement.city || viewingCustomerStatement.location || ''}</strong>
+              </div>
+              <div className="info-block">
+                <span className="info-label">Total Outstanding Balance</span>
+                <strong className={`info-value fs-xxl ${viewingCustomerStatement.balance > 0 ? 'text-danger' : 'text-success'}`}>
+                  {formatMoney(viewingCustomerStatement.balance)}
+                </strong>
+              </div>
+            </div>
+
+            {/* MAIN DOUBLE ENTRY LEDGER TABLE */}
+            <div className="card mb-0" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
+              <h3 className="card-title mb-1-5">Complete Financial Ledger</h3>
+              <div className="ledger-table-wrapper">
+                <table className="ledger-strict-table">
+                  <thead>
+                    <tr>
+                      <th style={{width: '12%'}}>Date</th>
+                      <th style={{width: '18%'}}>Particulars</th>
+                      <th style={{width: '15%'}}>Ref No.</th>
+                      <th style={{width: '10%'}}>Method</th>
+                      <th className="right-align" style={{width: '15%'}}>Bill Amount (+)</th>
+                      <th className="right-align" style={{width: '15%'}}>Paid Amount (-)</th>
+                      <th className="right-align" style={{width: '15%'}}>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customerStatementData.length ? customerStatementData.map((row, idx) => (
+                      <tr key={idx} className={row.isCashTx ? 'ledger-row-neutral' : ''}>
+                        <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
+                        <td>
+                          <span className={`badge ${row.type === 'Payment Received' ? 'btn-success text-white' : (row.type === 'Sale Return' ? 'btn-danger text-white' : 'bg-slate-200')}`}>
+                            {row.type}
+                          </span>
+                        </td>
+                        <td className="font-monospace text-muted">{row.ref}</td>
+                        <td>{row.method}</td>
+                        
+                        <td className="right-align fw-bold" style={{color: row.debit > 0 ? '#ef4444' : '#94a3b8'}}>
+                          {row.debit > 0 ? formatMoney(row.debit) : '-'}
+                        </td>
+                        
+                        <td className="right-align fw-bold" style={{color: row.credit > 0 ? '#10b981' : '#94a3b8'}}>
+                          {row.credit > 0 ? formatMoney(row.credit) : '-'}
+                        </td>
+                        
+                        <td className="right-align fw-bold fs-lg">
+                          <span style={{ color: '#0f172a' }}>{formatMoney(Math.abs(row.runningBalance))}</span>
+                          <span className={row.runningBalance > 0 ? 'text-dr' : (row.runningBalance < 0 ? 'text-cr' : '')}>
+                            {row.runningBalance > 0 ? ' Dr' : (row.runningBalance < 0 ? ' Cr' : '')}
+                          </span>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={7} className="empty-state">No transaction history found for this customer.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-1-5">
+                <div className="text-muted fs-sm">* Cash transactions show matching Bill & Paid amounts on the same row because they do not change the total outstanding ledger balance.</div>
+              </div>
+            </div>
+
+            {/* SPLIT VIEW SECTIONS */}
+            <div className="reports-layout">
+              {/* TABLE 1: SALES & BILLING HISTORY */}
+              <div className="card mb-0" style={{ padding: '1.5rem' }}>
+                <h3 className="card-title mb-1-5">Customer Purchases (Bills)</h3>
+                <div className="ledger-table-wrapper">
+                  <table className="ledger-strict-table" style={{ minWidth: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{width: '20%'}}>Date</th>
+                        <th style={{width: '30%'}}>Type</th>
+                        <th style={{width: '25%'}}>Ref No.</th>
+                        <th className="right-align" style={{width: '25%'}}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customerSalesData.length ? customerSalesData.map((row, idx) => (
+                        <tr key={idx}>
+                          <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
+                          <td>
+                            <span className={`badge ${row.isReturn ? 'btn-danger text-white' : 'bg-slate-200'}`}>
+                              {row.type}
+                            </span>
+                          </td>
+                          <td className="font-monospace text-muted">{row.ref}</td>
+                          <td className={`right-align fw-bold ${row.isReturn ? 'text-success' : 'text-danger'}`}>
+                            {formatMoney(row.amount)}
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={4} className="empty-state">No sales history found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* TABLE 2: PAYMENTS & RECEIPTS HISTORY */}
+              <div className="card mb-0" style={{ padding: '1.5rem' }}>
+                <h3 className="card-title mb-1-5">Customer Payments (Receipts)</h3>
+                <div className="ledger-table-wrapper">
+                  <table className="ledger-strict-table" style={{ minWidth: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{width: '20%'}}>Date</th>
+                        <th style={{width: '25%'}}>Method</th>
+                        <th style={{width: '25%'}}>Ref No.</th>
+                        <th className="right-align" style={{width: '30%'}}>Amount Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customerReceiptsData.length ? customerReceiptsData.map((row, idx) => (
+                        <tr key={idx}>
+                          <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
+                          <td>{row.method}</td>
+                          <td className="font-monospace text-muted">{row.ref}</td>
+                          <td className="right-align fw-bold text-success">
+                            {formatMoney(row.amount)}
+                            {row.discount > 0 && <div className="fs-sm text-muted text-dr">Less: {formatMoney(row.discount)}</div>}
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={4} className="empty-state">No payment history found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: RECEIPTS GENERATOR --- */}
+        {view === 'receipts' && (
+          <div className="card transparent-card">
+            <div className="reports-layout">
+              {/* Receipt Form Column */}
+              <div className="card mb-0">
+                <div className="card-header">
+                  <h2 className="card-title">Generate Receipt</h2>
+                </div>
+                <div className="form-group mt-1">
+                  <label className="form-label">Select Customer:</label>
                   <div className="dropdown-container">
                     <input
                       type="text"
-                      className={`form-control mb-0 ${!purchaseSellerName ? 'customer-input-warning' : ''}`}
-                      placeholder="Search or enter seller..."
-                      value={purchaseSellerName}
-                      onFocus={() => setIsSellerDropdownOpen(true)}
-                      onBlur={() => setTimeout(() => setIsSellerDropdownOpen(false), 200)}
-                      onChange={e => {
-                        setPurchaseSellerName(e.target.value)
-                        setIsSellerDropdownOpen(true)
+                      className="form-control"
+                      placeholder="Search customer name or phone..."
+                      value={receiptSearch}
+                      onFocus={() => setIsReceiptDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setIsReceiptDropdownOpen(false), 200)}
+                      onChange={e => { 
+                        setReceiptSearch(e.target.value)
+                        setIsReceiptDropdownOpen(true)
+                        setReceiptCustomer(null) 
                       }}
                     />
-                    {isSellerDropdownOpen && (
+                    {isReceiptDropdownOpen && (
                       <ul className="dropdown-menu">
-                        {dropdownFilteredSellers.length > 0 ? dropdownFilteredSellers.map((seller, idx) => (
-                          <li
-                            key={idx}
-                            className="dropdown-item"
-                            onMouseDown={() => {
-                              setPurchaseSellerName(seller)
-                              setIsSellerDropdownOpen(false)
-                            }}
-                          >
-                            {seller}
+                        {receiptFilteredCustomers.length > 0 ? receiptFilteredCustomers.map(c => (
+                          <li key={c.id} className="dropdown-item" onMouseDown={() => { 
+                            setReceiptCustomer(c)
+                            setReceiptSearch(c.name)
+                            setIsReceiptDropdownOpen(false) 
+                          }}>
+                            <span className="fw-bold">{c.name}</span>
+                            <span className="dropdown-location">
+                              {c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}
+                            </span>
                           </li>
-                        )) : (
-                          <li className="dropdown-empty">Press enter to use new seller</li>
-                        )}
+                        )) : <li className="dropdown-empty">No customers found</li>}
                       </ul>
                     )}
                   </div>
                 </div>
 
-                <div className="action-buttons-right">
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => {
-                      setSearchQuery('');
-                      setShowAddPurchaseProductModal(true);
-                    }}
-                  >
-                    + Add Products
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-header header-actions">
-                <h2 className="card-title">
-                  Purchase Cart - {purchaseSellerName ? purchaseSellerName : <span className="text-danger">No Seller Selected</span>}
-                </h2>
-              </div>
-              
-              <div className="invoice-summary-grid purchase-entry-grid border-bottom-padded">
-                <div className="form-group mb-0">
-                  <label className="form-label">
-                    Purchase Invoice ID <span className="text-danger">*</span>
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">Receipt Date:</label>
                   <input
-                    type="text"
-                    className="form-control mb-0"
-                    placeholder="e.g. INV-12:A9"
-                    value={customInvoiceId}
-                    onChange={e => setCustomInvoiceId(e.target.value)}
+                    type="date" className="form-control"
+                    value={receiptDate} onChange={e => setReceiptDate(e.target.value)}
                   />
                 </div>
-                <div className="form-group mb-0">
-                  <label className="form-label">
-                    Date of Purchase <span className="text-danger">*</span>
-                  </label>
+
+                <div className="sales-control-row p-0 border-none m-0" style={{ gap: '1rem', background: 'transparent' }}>
+                  <div className="form-group w-100">
+                    <label className="form-label">Amount Received (₹):</label>
+                    <input
+                      type="number" className="form-control fs-xl fw-bold text-success"
+                      value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  
+                  {/* NEW DISCOUNT LESS FIELD */}
+                  <div className="form-group w-100">
+                    <label className="form-label">Discount / Less (₹):</label>
+                    <input
+                      type="number" className="form-control fs-xl fw-bold text-danger"
+                      value={receiptDiscount} onChange={e => setReceiptDiscount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Payment Mode:</label>
+                  <select className="form-control" value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)}>
+                    <option value="Cash">Cash</option><option value="PhonePe">PhonePe</option><option value="GPay">GPay</option>
+                    <option value="Cheque">Cheque</option><option value="Bank Transfer">Bank Transfer / NEFT</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Remarks / Note:</label>
                   <input
-                    type="date"
-                    className="form-control mb-0"
-                    value={purchaseDate}
-                    onChange={e => setPurchaseDate(e.target.value)}
+                    type="text" className="form-control"
+                    value={receiptRemarks} onChange={e => setReceiptRemarks(e.target.value)}
                   />
                 </div>
-              </div>
 
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>S.No</th>
-                      <th>Product</th>
-                      <th>Buy Price</th>
-                      <th>Quantity</th>
-                      <th>Total</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {purchaseCart.length ? purchaseCart.map((item, idx) => (
-                      <tr key={`${item.id}-${idx}`}>
-                        <td className="fw-bold">{idx + 1}</td>
-                        <td>
-                          <span className="product-name-large">
-                            {item.name}
-                          </span>
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            className="form-control mb-0 price-box-width"
-                            min="0"
-                            step="0.01"
-                            value={item.purchasePrice}
-                            onChange={e => updatePurchasePrice(idx, parseFloat(e.target.value) || 0)}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            className="quantity-input form-control mb-0 qty-input-large"
-                            min="1"
-                            value={item.quantity}
-                            onChange={e => updatePurchaseQuantity(idx, e.target.value)}
-                            onBlur={e => {
-                              if (e.target.value === '' || Number(e.target.value) < 1) {
-                                updatePurchaseQuantity(idx, 1);
-                              }
-                            }}
-                          />
-                        </td>
-                        <td className="price-text text-warning">
-                          {formatMoney(item.purchasePrice * (Number(item.quantity) || 0))}
-                        </td>
-                        <td>
-                          <button 
-                            className="btn btn-danger" 
-                            onClick={() => removePurchaseCartItem(idx)}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={6} className="empty-state">
-                          Purchase cart is empty. Click "+ Add Products" to begin.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {purchaseCart.length > 0 && (
-                <div className="receipt-wrapper">
-                  <div className="receipt-panel full-width-panel">
-                    
-                    <div className="receipt-summary-header">
-                      <span className="fw-bold text-slate">
-                        Total Items: {purchaseCart.length}
-                      </span>
-                      <span className="fw-bold text-slate">
-                        Total Qty: {purchaseCart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}
-                      </span>
-                    </div>
-
-                    <div className="receipt-row receipt-three-col fs-xl mb-1-5">
-                      <span className="fw-bold">Gross Total:</span>
-                      <span className="text-center text-muted"></span>
-                      <span className="text-right fw-bold">
-                        {formatMoney(purchaseBillingDetails.subtotal)}
-                      </span>
-                    </div>
-                    
-                    <button 
-                      className="btn btn-primary btn-checkout" 
-                      onClick={proceedToPurchaseSummary}
-                    >
-                      Proceed to Bill Summary
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* --- INTERFACE PATH TARGET: SECOND PAGE PURCHASE SUMMARY --- */}
-        {view === 'purchase-summary-screen' && (
-          <div className="card">
-            <div className="card-header header-actions">
-              <h2 className="card-title">
-                Purchase Summary
-              </h2>
-              <button 
-                className="btn btn-secondary action-buttons-right" 
-                onClick={() => setView('purchase-new')}
-              >
-                Back to Cart
-              </button>
-            </div>
-
-            <div className="invoice-summary-grid margin-top-large highlight-summary-box">
-              <div className="info-block">
-                <span className="info-label">Seller</span>
-                <strong className="info-value text-primary">{purchaseSellerName}</strong>
-              </div>
-              <div className="info-block">
-                <span className="info-label">Invoice ID</span>
-                <strong className="info-value">{customInvoiceId}</strong>
-              </div>
-              <div className="info-block">
-                <span className="info-label">Date</span>
-                <strong className="info-value">{new Date(purchaseDate).toLocaleDateString('en-GB')}</strong>
-              </div>
-            </div>
-
-            <div className="receipt-wrapper mt-2">
-              <div className="receipt-panel full-width-panel">
-                <h3 className="receipt-header">Full Bill Summary</h3>
-                
-                <div className="receipt-summary-header">
-                  <span className="fw-bold text-slate">
-                    Total Items: {purchaseCart.length}
-                  </span>
-                  <span className="fw-bold text-slate">
-                    Total Qty: {purchaseCart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}
-                  </span>
-                </div>
-
-                <div className="receipt-row receipt-three-col">
-                  <span className="fw-bold">Gross Total:</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-right">{formatMoney(purchaseBillingDetails.subtotal)}</span>
-                </div>
-                
-                <div className="receipt-row receipt-three-col">
-                  <span className="fw-bold">Discount:</span>
-                  <div className="input-with-symbol">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={purchaseDiscountPercent}
-                      onChange={e => setPurchaseDiscountPercent(Number(e.target.value))}
-                      className="form-control discount-input"
-                    />
-                    <span className="text-muted">%</span>
-                  </div>
-                  <span className="text-right text-danger">
-                    -{formatMoney(purchaseBillingDetails.discountAmount)}
-                  </span>
-                </div>
-                
-                <div className="receipt-row receipt-three-col">
-                  <span className="fw-bold">Total Tax:</span>
-                  <div className="input-with-symbol">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={purchaseTaxPercent}
-                      onChange={e => setPurchaseTaxPercent(Number(e.target.value))}
-                      className="form-control discount-input"
-                    />
-                    <span className="text-muted">%</span>
-                  </div>
-                  <span className="text-right"></span>
-                </div>
-
-                <div className="receipt-row receipt-three-col">
-                  <span className="text-muted">Subtotal (Excl. Tax):</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-right">{formatMoney(purchaseBillingDetails.taxableAmount)}</span>
-                </div>
-                
-                <div className="receipt-row receipt-three-col">
-                  <span className="text-muted">CGST:</span>
-                  <span className="text-center text-muted">
-                    {purchaseBillingDetails.cgstPercent.toFixed(1).replace('.0', '')}%
-                  </span>
-                  <span className="text-right">+{formatMoney(purchaseBillingDetails.cgst)}</span>
-                </div>
-                
-                <div className="receipt-row receipt-three-col">
-                  <span className="text-muted">SGST:</span>
-                  <span className="text-center text-muted">
-                    {purchaseBillingDetails.sgstPercent.toFixed(1).replace('.0', '')}%
-                  </span>
-                  <span className="text-right">+{formatMoney(purchaseBillingDetails.sgst)}</span>
-                </div>
-
-                <div className="receipt-row receipt-three-col">
-                  <span className="text-muted">Roundoff:</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-right">
-                    {purchaseBillingDetails.roundoff > 0 ? '+' : ''}
-                    {formatMoney(purchaseBillingDetails.roundoff)}
-                  </span>
-                </div>
-                
-                <div className="receipt-total receipt-three-col">
-                  <span>Final Total:</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-warning text-right">
-                    {formatMoney(purchaseBillingDetails.finalTotal)}
-                  </span>
-                </div>
-                
-                <button 
-                  className="btn btn-warning btn-checkout mt-1-5" 
-                  onClick={submitPurchaseCart}
-                >
-                  Save Purchase Invoice
+                <button className="btn btn-primary w-100 mt-1-5 fs-lg" onClick={handleGenerateReceipt}>
+                  Save & Record Payment
                 </button>
               </div>
+
+              {/* Live Preview Column */}
+              <div className="card mb-0" style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+                <div className="card-header border-none pb-0">
+                  <h3 className="text-center w-100 text-slate mb-0">Live Receipt Preview</h3>
+                </div>
+                <div className="receipt-panel" style={{ backgroundColor: 'white', marginTop: '1.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                  <div className="text-center border-bottom-padded mb-1-5">
+                    <h2 className="mb-0 text-slate">PAYMENT RECEIPT</h2>
+                    <p className="text-muted mt-1 mb-0">{new Date(receiptDate).toLocaleDateString('en-GB')}</p>
+                  </div>
+                  
+                  <div className="receipt-row receipt-three-col single-col-grid" style={{ gridTemplateColumns: '1fr', borderBottom: 'none' }}>
+                    <div className="info-block">
+                      <span className="info-label">Received From</span>
+                      <strong className="info-value fs-xl text-primary">{receiptCustomer ? receiptCustomer.name : '__________________'}</strong>
+                    </div>
+                    <div className="info-block mt-1">
+                      <span className="info-label">Amount Received</span>
+                      <strong className="info-value fs-xxl text-success">
+                        {receiptAmount ? formatMoney(receiptAmount) : '₹ 0.00'}
+                      </strong>
+                    </div>
+                    {receiptDiscount > 0 && (
+                      <div className="info-block mt-1">
+                        <span className="info-label">Less (Discount)</span>
+                        <strong className="info-value fs-lg text-danger">
+                          - {formatMoney(receiptDiscount)}
+                        </strong>
+                      </div>
+                    )}
+                    <div className="info-block mt-1">
+                      <span className="info-label">Total Settled on Ledger</span>
+                      <strong className="info-value fs-xl text-slate">
+                        {formatMoney(Number(receiptAmount) + Number(receiptDiscount))}
+                      </strong>
+                    </div>
+                    <div className="info-block mt-1">
+                      <span className="info-label">Payment Mode</span>
+                      <strong className="info-value text-slate">{receiptMethod}</strong>
+                    </div>
+                  </div>
+
+                  <div className="receipt-total receipt-three-col mt-2">
+                    <span className="fs-sm text-muted fw-normal">* Computer generated receipt</span>
+                    <span className="text-right fs-lg text-slate">Authorized Signatory</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
-        {/* --- INTERFACE PATH TARGET: INBOUND REGISTRATION HISTORY --- */}
-        {view === 'purchases-list' && (
+        {/* --- INTERFACE PATH TARGET: RECEIPTS MASTER LIST --- */}
+        {view === 'receipts-list' && (
           <div className="card">
             <div className="card-header header-actions">
-              <h2 className="card-title mb-0">Purchase History</h2>
-              <input
-                type="text"
-                className="form-control header-search"
-                placeholder="Search ID, custom bill id or seller..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+              <h2 className="card-title mb-0">Master Receipts List</h2>
+              <input 
+                type="text" 
+                className="form-control header-search" 
+                placeholder="Search Customer or ID..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
               />
             </div>
             
@@ -1884,33 +1817,214 @@ export default function App() {
               <table className="block-table data-table">
                 <thead>
                   <tr>
-                    <th>Seller Bill ID</th>
-                    <th>Seller Name</th>
-                    <th>Final Total</th>
-                    <th>Purchase Date</th>
+                    <th>Receipt ID</th>
+                    <th>Date</th>
+                    <th>Customer Name</th>
+                    <th>Amount Received</th>
+                    <th>Less (Discount)</th>
+                    <th>Payment Mode</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedPurchaseInvoices.length ? paginatedPurchaseInvoices.map(invoice => (
-                    <tr 
-                      key={invoice.id} 
-                      className="product-row available"
-                      onClick={() => handleViewPurchaseInvoiceDetails(invoice.id)}
-                    >
-                      <td className="fw-bold cell-padded">
-                        {invoice.customInvoiceId || `N/A (#${invoice.id})`}
+                  {paginatedReceipts.length ? paginatedReceipts.map(rec => (
+                    <tr key={rec.id} className="product-row available">
+                      <td className="fw-bold cell-padded">{formatReceiptId(rec.id)}</td>
+                      <td className="cell-padded">{new Date(rec.receiptDate).toLocaleDateString('en-GB')}</td>
+                      <td className="fw-bold cell-padded">{rec.customerName}</td>
+                      <td className="price-text text-success fw-bold fs-lg cell-padded">
+                        {formatMoney(rec.amount)}
                       </td>
-                      <td className="cell-padded">{invoice.sellerName}</td>
-                      <td className="price-text text-warning fw-bold cell-padded">
-                        {formatMoney(invoice.finalTotal)}
+                      <td className="cell-padded text-danger fw-bold">
+                        {rec.discountAmount > 0 ? formatMoney(rec.discountAmount) : '-'}
                       </td>
-                      <td className="fw-bold cell-padded">
-                        {new Date(invoice.purchaseDate).toLocaleDateString('en-GB')}
+                      <td className="cell-padded">
+                        <span className="badge">{rec.paymentMode}</span>
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={4} className="empty-state">No purchases found.</td></tr>
+                    <tr><td colSpan={6} className="empty-state">No receipts found.</td></tr>
                   )}
+                </tbody>
+              </table>
+            </div>
+            {renderPagination(filteredReceipts.length)}
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: NEW PURCHASE ENTRY --- */}
+        {view === 'purchase-new' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title">{editingPurchaseInvoiceId ? 'Edit Purchase Invoice' : 'New Vendor Purchase'}</h2>
+            </div>
+            <div className="sales-control-row mt-1 mb-1-5">
+              <div className="input-group">
+                <label>Seller / Vendor Name</label>
+                <div className="dropdown-container">
+                  <input
+                    type="text" className="form-control mb-0" placeholder="Enter or select seller..."
+                    value={purchaseSellerName}
+                    onFocus={() => setIsSellerDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setIsSellerDropdownOpen(false), 200)}
+                    onChange={e => { setPurchaseSellerName(e.target.value); setIsSellerDropdownOpen(true); }}
+                  />
+                  {isSellerDropdownOpen && (
+                    <ul className="dropdown-menu">
+                      {dropdownFilteredSellers.length > 0 ? dropdownFilteredSellers.map((seller, idx) => (
+                        <li key={idx} className="dropdown-item fw-bold" onMouseDown={() => { setPurchaseSellerName(seller); setIsSellerDropdownOpen(false); }}>
+                          {seller}
+                        </li>
+                      )) : <li className="dropdown-empty">Type to add new seller</li>}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <div className="input-group">
+                <label>Bill/Invoice Number</label>
+                <input type="text" className="form-control mb-0" placeholder="e.g. INV-2026-99" value={customInvoiceId} onChange={e => setCustomInvoiceId(e.target.value)} />
+              </div>
+              <div className="input-group">
+                <label>Date of Purchase</label>
+                <input type="date" className="form-control mb-0" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+              </div>
+              <div className="action-buttons-right mt-auto">
+                <button className="btn btn-primary" onClick={() => { setSearchQuery(''); setShowAddPurchaseProductModal(true); }}>+ Add Products</button>
+              </div>
+            </div>
+
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr><th>S.No</th><th>Product</th><th>Buy Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {purchaseCart.length ? purchaseCart.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="fw-bold">{idx + 1}</td>
+                      <td><span className="product-name-large">{item.name}</span></td>
+                      <td>
+                        <input type="number" className="form-control mb-0 w-100" min="0" step="0.01" value={item.purchasePrice} onChange={e => updatePurchasePrice(idx, Number(e.target.value))} />
+                      </td>
+                      <td>
+                        <input type="number" className="quantity-input form-control mb-0 qty-input-large" min="1" value={item.quantity} onChange={e => updatePurchaseQuantity(idx, e.target.value)} onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updatePurchaseQuantity(idx, 1); }} />
+                      </td>
+                      <td className="price-text text-warning">{formatMoney((item.purchasePrice || 0) * (Number(item.quantity) || 0))}</td>
+                      <td><button className="btn btn-danger" onClick={() => removePurchaseCartItem(idx)}>Remove</button></td>
+                    </tr>
+                  )) : <tr><td colSpan={6} className="empty-state">Purchase cart is empty.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {purchaseCart.length > 0 && (
+              <div className="modal-actions mt-2">
+                <button className="btn btn-secondary p-1" onClick={cancelPurchase}>Cancel Purchase</button>
+                <button className="btn btn-success p-1" onClick={proceedToPurchaseSummary}>Proceed to Summary</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: PURCHASE SUMMARY/PAYMENT --- */}
+        {view === 'purchase-summary-screen' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title">Purchase Summary</h2>
+              <button className="btn btn-secondary action-buttons-right" onClick={() => setView('purchase-new')}>Back to Edit</button>
+            </div>
+            
+            <div className="invoice-summary-grid margin-top-large">
+              <div className="info-block">
+                <span className="info-label">Seller Name</span>
+                <strong className="info-value">{purchaseSellerName}</strong>
+              </div>
+              <div className="info-block">
+                <span className="info-label">Invoice Number</span>
+                <strong className="info-value">{customInvoiceId}</strong>
+              </div>
+              <div className="info-block">
+                <span className="info-label">Purchase Date</span>
+                <strong className="info-value">{new Date(purchaseDate).toLocaleDateString()}</strong>
+              </div>
+            </div>
+
+            <div className="receipt-wrapper mt-2">
+              <div className="receipt-panel full-width-panel">
+                <div className="receipt-row receipt-three-col">
+                  <span className="fw-bold">Subtotal:</span>
+                  <span className="text-center text-muted"></span>
+                  <span className="text-right">{formatMoney(purchaseBillingDetails.subtotal)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="fw-bold">Discount:</span>
+                  <div className="input-with-symbol">
+                    <input type="number" min="0" max="100" value={purchaseDiscountPercent} onChange={e => setPurchaseDiscountPercent(Number(e.target.value))} className="form-control discount-input" />
+                    <span className="text-muted">%</span>
+                  </div>
+                  <span className="text-right text-danger">-{formatMoney(purchaseBillingDetails.discountAmount)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="fw-bold">Tax:</span>
+                  <div className="input-with-symbol">
+                    <input type="number" min="0" max="100" value={purchaseTaxPercent} onChange={e => setPurchaseTaxPercent(Number(e.target.value))} className="form-control discount-input" />
+                    <span className="text-muted">%</span>
+                  </div>
+                  <span className="text-right"></span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="text-muted">Subtotal (Excl. Tax):</span><span className="text-center text-muted"></span>
+                  <span className="text-right">{formatMoney(purchaseBillingDetails.taxableAmount)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="text-muted">CGST:</span>
+                  <span className="text-center text-muted">{purchaseBillingDetails.cgstPercent.toFixed(1).replace('.0', '')}%</span>
+                  <span className="text-right">+{formatMoney(purchaseBillingDetails.cgst)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="text-muted">SGST:</span>
+                  <span className="text-center text-muted">{purchaseBillingDetails.sgstPercent.toFixed(1).replace('.0', '')}%</span>
+                  <span className="text-right">+{formatMoney(purchaseBillingDetails.sgst)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col">
+                  <span className="text-muted">Roundoff:</span><span className="text-center text-muted"></span>
+                  <span className="text-right">{purchaseBillingDetails.roundoff > 0 ? '+' : ''}{formatMoney(purchaseBillingDetails.roundoff)}</span>
+                </div>
+                <div className="receipt-total receipt-three-col">
+                  <span>Final Total:</span><span className="text-center text-muted"></span>
+                  <span className="text-success text-right">{formatMoney(purchaseBillingDetails.finalTotal)}</span>
+                </div>
+                <button className="btn btn-success btn-checkout" onClick={submitPurchaseCart}>
+                  {editingPurchaseInvoiceId ? 'Update Purchase Invoice' : 'Confirm & Save Purchase'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: PURCHASES MASTER LIST --- */}
+        {view === 'purchases-list' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Purchase History</h2>
+              <input type="text" className="form-control header-search" placeholder="Search by Seller or ID..." value={purchaseSearchQuery} onChange={e => setPurchaseSearchQuery(e.target.value)} />
+            </div>
+            <div className="table-responsive">
+              <table className="block-table data-table">
+                <thead>
+                  <tr><th>System ID</th><th>Seller Name</th><th>Vendor Bill No</th><th>Total Amount</th><th>Date</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {paginatedPurchaseInvoices.length ? paginatedPurchaseInvoices.map(invoice => (
+                    <tr key={invoice.id} className="product-row available" onClick={(e) => { if (e.target.tagName !== 'BUTTON') handleViewPurchaseInvoiceDetails(invoice.id); }}>
+                      <td className="fw-bold cell-padded">{formatPurchaseInvoiceId(invoice.id)}</td>
+                      <td className="cell-padded">{invoice.sellerName}</td>
+                      <td className="cell-padded">{invoice.customInvoiceId || 'N/A'}</td>
+                      <td className="price-text fw-bold cell-padded">{formatMoney(invoice.finalTotal)}</td>
+                      <td className="cell-padded">{new Date(invoice.purchaseDate).toLocaleDateString()}</td>
+                      <td className="cell-padded">
+                        <button className="btn btn-warning" onClick={(e) => { e.stopPropagation(); handleEditPurchase(invoice); }}>Edit</button>
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan={6} className="empty-state">No purchases found.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -1918,22 +2032,12 @@ export default function App() {
           </div>
         )}
 
-        {/* --- INTERFACE PATH TARGET: INBOUND INVOICE DETAILS PAGE --- */}
+        {/* --- INTERFACE PATH TARGET: PURCHASE INVOICE DETAILS --- */}
         {view === 'purchase-invoice-details' && selectedPurchaseInvoice && selectedPurchaseInvoiceMath && (
           <div className="card">
             <div className="card-header header-actions">
-              <h2 className="card-title">
-                Purchase Bill #{selectedPurchaseInvoice.customInvoiceId || selectedPurchaseInvoice.id} Details
-              </h2>
-              <button 
-                className="btn btn-secondary action-buttons-right" 
-                onClick={() => { 
-                  setSelectedPurchaseInvoice(null)
-                  setView('purchases-list') 
-                }}
-              >
-                Back to Purchases
-              </button>
+              <h2 className="card-title">Purchase {formatPurchaseInvoiceId(selectedPurchaseInvoice.id)} Details</h2>
+              <button className="btn btn-secondary action-buttons-right" onClick={() => { setSelectedPurchaseInvoice(null); setView('purchases-list'); }}>Back to Purchases</button>
             </div>
             
             <div className="invoice-summary-grid margin-top-large">
@@ -1942,46 +2046,30 @@ export default function App() {
                 <strong className="info-value">{selectedPurchaseInvoice.sellerName}</strong>
               </div>
               <div className="info-block">
-                <span className="info-label">Date of Purchase</span>
-                <strong className="info-value bill-blue">
-                  {new Date(selectedPurchaseInvoice.purchaseDate).toLocaleDateString('en-GB')}
-                </strong>
+                <span className="info-label">Vendor Bill No</span>
+                <strong className="info-value">{selectedPurchaseInvoice.customInvoiceId || 'N/A'}</strong>
               </div>
               <div className="info-block">
-                <span className="info-label">Software Entry Time</span>
-                <strong className="info-value">
-                  {new Date(selectedPurchaseInvoice.entryDate).toLocaleString()}
-                </strong>
+                <span className="info-label">Purchase Date</span>
+                <strong className="info-value">{new Date(selectedPurchaseInvoice.purchaseDate).toLocaleDateString()}</strong>
               </div>
             </div>
             
-            <h4 className="section-title-spacing">Items Bought</h4>
+            <h4 className="section-title-spacing">Items Received</h4>
             
             <div className="table-responsive table-margin-bottom">
               <table className="data-table">
                 <thead>
-                  <tr>
-                    <th>S.No</th>
-                    <th>Product</th>
-                    <th>Buy Price</th>
-                    <th>Qty</th>
-                    <th>Total</th>
-                  </tr>
+                  <tr><th>S.No</th><th>Product</th><th>Buy Price</th><th>Qty</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   {selectedPurchaseInvoice.items?.map((item, idx) => (
                     <tr key={idx}>
                       <td className="fw-bold">{idx + 1}</td>
-                      <td>
-                        <span className="product-name-large">
-                          {item.product.name}
-                        </span>
-                      </td>
+                      <td><span className="product-name-large">{item.product.name}</span></td>
                       <td>{formatMoney(item.purchasePrice)}</td>
                       <td className="fw-bold fs-lg">{item.quantity}</td>
-                      <td className="price-text text-warning">
-                        {formatMoney(item.purchasePrice * item.quantity)}
-                      </td>
+                      <td className="price-text text-warning">{formatMoney(item.purchasePrice * item.quantity)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1991,327 +2079,241 @@ export default function App() {
             <div className="invoice-math-wrapper">
               <div className="receipt-panel full-width-panel">
                 <div className="receipt-row receipt-three-col">
-                  <span className="fw-bold">Subtotal:</span>
-                  <span className="text-center text-muted"></span>
+                  <span className="fw-bold">Subtotal:</span><span className="text-center text-muted"></span>
                   <span className="text-right">{formatMoney(selectedPurchaseInvoiceMath.subtotal)}</span>
                 </div>
-                
                 {selectedPurchaseInvoiceMath.discountPercent > 0 && (
                   <div className="receipt-row receipt-three-col highlight-red">
                     <span className="fw-bold">Discount:</span>
                     <span className="text-center text-muted">{selectedPurchaseInvoiceMath.discountPercent}%</span>
-                    <span className="text-right text-danger">
-                      -{formatMoney(selectedPurchaseInvoiceMath.discountAmount)}
-                    </span>
+                    <span className="text-right text-danger">-{formatMoney(selectedPurchaseInvoiceMath.discountAmount)}</span>
                   </div>
                 )}
-                
                 {selectedPurchaseInvoiceMath.totalTaxPercent > 0 && (
                   <>
                     <div className="receipt-row receipt-three-col">
                       <span className="fw-bold">Total Tax:</span>
-                      <span className="text-center text-muted">
-                        {selectedPurchaseInvoiceMath.totalTaxPercent.toFixed(1).replace('.0', '')}%
-                      </span>
+                      <span className="text-center text-muted">{selectedPurchaseInvoiceMath.totalTaxPercent.toFixed(1).replace('.0', '')}%</span>
                       <span className="text-right"></span>
                     </div>
-
                     <div className="receipt-row receipt-three-col">
-                      <span className="text-muted">Subtotal (Excl. Tax):</span>
-                      <span className="text-center text-muted"></span>
+                      <span className="text-muted">Subtotal (Excl. Tax):</span><span className="text-center text-muted"></span>
                       <span className="text-right">{formatMoney(selectedPurchaseInvoiceMath.taxableAmount)}</span>
                     </div>
-
                     <div className="receipt-row receipt-three-col">
                       <span className="text-muted">CGST:</span>
-                      <span className="text-center text-muted">
-                        {selectedPurchaseInvoiceMath.cgstPercent.toFixed(1).replace('.0', '')}%
-                      </span>
+                      <span className="text-center text-muted">{selectedPurchaseInvoiceMath.cgstPercent.toFixed(1).replace('.0', '')}%</span>
                       <span className="text-right">+{formatMoney(selectedPurchaseInvoiceMath.cgst)}</span>
                     </div>
-                    
                     <div className="receipt-row receipt-three-col">
                       <span className="text-muted">SGST:</span>
-                      <span className="text-center text-muted">
-                        {selectedPurchaseInvoiceMath.sgstPercent.toFixed(1).replace('.0', '')}%
-                      </span>
+                      <span className="text-center text-muted">{selectedPurchaseInvoiceMath.sgstPercent.toFixed(1).replace('.0', '')}%</span>
                       <span className="text-right">+{formatMoney(selectedPurchaseInvoiceMath.sgst)}</span>
                     </div>
                   </>
                 )}
-
                 <div className="receipt-row receipt-three-col">
-                  <span className="text-muted">Roundoff:</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-right">
-                    {selectedPurchaseInvoiceMath.roundoff > 0 ? '+' : ''}
-                    {formatMoney(selectedPurchaseInvoiceMath.roundoff)}
-                  </span>
+                  <span className="text-muted">Roundoff:</span><span className="text-center text-muted"></span>
+                  <span className="text-right">{selectedPurchaseInvoiceMath.roundoff > 0 ? '+' : ''}{formatMoney(selectedPurchaseInvoiceMath.roundoff)}</span>
                 </div>
-                
                 <div className="receipt-total receipt-three-col">
-                  <span>Final Total:</span>
-                  <span className="text-center text-muted"></span>
-                  <span className="text-warning text-right">
-                    {formatMoney(selectedPurchaseInvoiceMath.finalTotal)}
-                  </span>
+                  <span>Final Total:</span><span className="text-center text-muted"></span>
+                  <span className="fw-bold text-right text-success">{formatMoney(selectedPurchaseInvoiceMath.finalTotal)}</span>
                 </div>
               </div>
             </div>
-            
-            <button 
-              className="btn btn-secondary w-100 close-btn-padding"
-              onClick={() => { 
-                setSelectedPurchaseInvoice(null)
-                setView('purchases-list') 
-              }}
-            >
-              Back to Purchases List
-            </button>
           </div>
         )}
 
-        {/* --- INTERFACE PATH TARGET: MERGED OUTBOUND MARKETPLACE & CART --- */}
+        {/* --- INTERFACE PATH TARGET: MULTI-TAB SALES MARKETPLACE --- */}
         {view === 'list' && (
           <div>
-            <div className="sales-control-panel">
-              <div className="cancel-btn-wrapper">
-                <button 
-                  className="btn btn-danger btn-sm" 
-                  onClick={cancelSale}
-                >
-                  ✕ Cancel Sale
-                </button>
-              </div>
-              <div className="sales-control-row">
-                <div className="input-group customer-dropdown-group">
-                  <label>Select Customer</label>
-                  <div className="dropdown-container">
-                    <input
-                      type="text"
-                      className={`form-control mb-0 ${!activeCustomer ? 'customer-input-warning' : ''}`}
-                      placeholder="Search or select customer..."
-                      value={customerSearch}
-                      onFocus={() => setIsDropdownOpen(true)}
-                      onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
-                      onChange={e => { 
-                        setCustomerSearch(e.target.value)
-                        setIsDropdownOpen(true)
-                        setActiveCustomer(null) 
-                      }}
-                    />
-                    {isDropdownOpen && (
-                      <ul className="dropdown-menu">
-                        {dropdownFilteredCustomers.length > 0 ? dropdownFilteredCustomers.map(c => (
-                          <li
-                            key={c.id}
-                            className="dropdown-item"
-                            onMouseDown={() => { 
-                              setActiveCustomer(c)
-                              setCustomerSearch(c.name)
-                              setIsDropdownOpen(false) 
-                            }}
-                          >
-                            <span className="fw-bold">{c.name}</span>
-                            {(c.location || c.city) && (
-                              <span className="dropdown-location">
-                                - {[c.location, c.city].filter(Boolean).join(', ')}
-                              </span>
-                            )}
-                          </li>
-                        )) : (
-                          <li className="dropdown-empty">No customers found</li>
-                        )}
-                      </ul>
-                    )}
-                  </div>
+            <div className="tabs-container">
+              {salesTabs.map(tab => (
+                <div key={tab.id} className={`tab-button ${tab.id === activeTabId ? 'active' : ''}`} onClick={() => setActiveTabId(tab.id)}>
+                  {tab.title}
+                  <button className="tab-close" onClick={(e) => closeTab(tab.id, e)}>✕</button>
                 </div>
-
-                <div className="action-buttons-right">
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => {
-                      setSearchQuery('');
-                      setShowAddProductModal(true);
-                    }}
-                  >
-                    + Add Products
-                  </button>
-                </div>
-              </div>
+              ))}
+              <button className="tab-add" onClick={() => openNewTab()} title="Open new sale tab">+</button>
             </div>
 
-            <div className="card">
-              <div className="card-header header-actions">
-                <h2 className="card-title">
-                  {editingInvoiceId ? `Editing Sale ${formatInvoiceId(editingInvoiceId)}` : 'Cart'} - {activeCustomer ? activeCustomer.name : <span className="text-danger">No Customer Selected</span>}
-                </h2>
-              </div>
-              
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>S.No</th>
-                      <th>Product</th>
-                      <th>Price</th>
-                      <th>Quantity</th>
-                      <th>Total</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cart.length ? cart.map((item, idx) => (
-                      <tr key={`${item.id}-${idx}`}>
-                        <td className="fw-bold">{idx + 1}</td>
-                        <td>
-                          <span className="product-name-large">
-                            {item.name}
-                          </span>
-                        </td>
-                        <td>{formatMoney(item.price)}</td>
-                        <td>
-                          <input
-                            type="number"
-                            className="quantity-input form-control mb-0 qty-input-large"
-                            min="1"
-                            max={item.stock}
-                            value={item.quantity}
-                            onChange={e => updateQuantity(idx, e.target.value)}
-                            onBlur={e => {
-                              if (e.target.value === '' || Number(e.target.value) < 1) {
-                                updateQuantity(idx, 1);
-                              }
-                            }}
-                          />
-                          {editingInvoiceId && item.originalQuantity !== undefined && (
-                            <div className="text-muted fs-sm mt-1">Previous: {item.originalQuantity}</div>
-                          )}
-                        </td>
-                        <td className="price-text">
-                          {formatMoney(item.price * (Number(item.quantity) || 0))}
-                        </td>
-                        <td>
-                          <button 
-                            className="btn btn-danger" 
-                            onClick={() => removeCartItem(idx)}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={6} className="empty-state">
-                          Cart is empty. Click "+ Add Products" to begin.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+            <div className="tab-content-panel">
+              <div className="sales-control-panel" style={{ boxShadow: 'none', border: '1px solid #e2e8f0', marginTop: 0 }}>
+                <div className="cancel-btn-wrapper">
+                  <button className="btn btn-warning btn-sm" onClick={saveToDrafts}>
+                    ⤓ Save to Drafts
+                  </button>
+                </div>
+                <div className="sales-control-row">
+                  <div className="input-group customer-dropdown-group">
+                    <label>Select Customer</label>
+                    <div className="dropdown-container">
+                      <input
+                        type="text"
+                        className={`form-control mb-0 ${!activeTab.activeCustomer ? 'customer-input-warning' : ''}`}
+                        placeholder="Search or select customer..."
+                        value={activeTab.customerSearch}
+                        onFocus={() => updateActiveTab({ isDropdownOpen: true })}
+                        onBlur={() => setTimeout(() => updateActiveTab({ isDropdownOpen: false }), 200)}
+                        onChange={e => updateActiveTab({ customerSearch: e.target.value, isDropdownOpen: true, activeCustomer: null })}
+                      />
+                      {activeTab.isDropdownOpen && (
+                        <ul className="dropdown-menu">
+                          {dropdownFilteredCustomers.length > 0 ? dropdownFilteredCustomers.map(c => (
+                            <li key={c.id} className="dropdown-item" onMouseDown={() => updateActiveTab({ activeCustomer: c, customerSearch: c.name, isDropdownOpen: false })}>
+                              <span className="fw-bold">{c.name}</span>
+                              {(c.location || c.city) && <span className="dropdown-location">- {[c.location, c.city].filter(Boolean).join(', ')}</span>}
+                            </li>
+                          )) : <li className="dropdown-empty">No customers found</li>}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
 
-              {cart.length > 0 && (
-                <div className="receipt-wrapper">
-                  <div className="receipt-panel full-width-panel">
-                    <h3 className="receipt-header">Bill Summary</h3>
-                    
-                    <div className="receipt-summary-header">
-                      <span className="fw-bold text-slate">
-                        Total Items: {cart.length}
-                      </span>
-                      <span className="fw-bold text-slate">
-                        Total Qty: {cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}
-                      </span>
-                    </div>
-
-                    <div className="receipt-row receipt-three-col">
-                      <span className="fw-bold">Subtotal:</span>
-                      <span className="text-center text-muted"></span>
-                      <span className="text-right">{formatMoney(billingDetails.subtotal)}</span>
-                    </div>
-                    
-                    <div className="receipt-row receipt-three-col">
-                      <span className="fw-bold">Discount:</span>
-                      <div className="input-with-symbol">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={discountPercent}
-                          onChange={e => setDiscountPercent(Number(e.target.value))}
-                          className="form-control discount-input"
-                        />
-                        <span className="text-muted">%</span>
-                      </div>
-                      <span className="text-right text-danger">
-                        -{formatMoney(billingDetails.discountAmount)}
-                      </span>
-                    </div>
-                    
-                    <div className="receipt-row receipt-three-col">
-                      <span className="fw-bold">Total Tax:</span>
-                      <div className="input-with-symbol">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={taxPercent}
-                          onChange={e => setTaxPercent(Number(e.target.value))}
-                          className="form-control discount-input"
-                        />
-                        <span className="text-muted">%</span>
-                      </div>
-                      <span className="text-right"></span>
-                    </div>
-
-                    <div className="receipt-row receipt-three-col">
-                      <span className="text-muted">Subtotal (Excl. Tax):</span>
-                      <span className="text-center text-muted"></span>
-                      <span className="text-right">{formatMoney(billingDetails.taxableAmount)}</span>
-                    </div>
-                    
-                    <div className="receipt-row receipt-three-col">
-                      <span className="text-muted">CGST:</span>
-                      <span className="text-center text-muted">
-                        {billingDetails.cgstPercent.toFixed(1).replace('.0', '')}%
-                      </span>
-                      <span className="text-right">+{formatMoney(billingDetails.cgst)}</span>
-                    </div>
-                    
-                    <div className="receipt-row receipt-three-col">
-                      <span className="text-muted">SGST:</span>
-                      <span className="text-center text-muted">
-                        {billingDetails.sgstPercent.toFixed(1).replace('.0', '')}%
-                      </span>
-                      <span className="text-right">+{formatMoney(billingDetails.sgst)}</span>
-                    </div>
-
-                    <div className="receipt-row receipt-three-col">
-                      <span className="text-muted">Roundoff:</span>
-                      <span className="text-center text-muted"></span>
-                      <span className="text-right">
-                        {billingDetails.roundoff > 0 ? '+' : ''}{formatMoney(billingDetails.roundoff)}
-                      </span>
-                    </div>
-                    
-                    <div className="receipt-total receipt-three-col">
-                      <span>Final Total:</span>
-                      <span className="text-center text-muted"></span>
-                      <span className="text-success text-right">
-                        {formatMoney(billingDetails.finalTotal)}
-                      </span>
-                    </div>
-                    
-                    <button 
-                      className="btn btn-success btn-checkout" 
-                      onClick={proceedToPayment}
-                    >
-                      Proceed to Payment
+                  <div className="action-buttons-right">
+                    <button className="btn btn-primary" onClick={() => { setSearchQuery(''); setShowAddProductModal(true); }}>
+                      + Add Products
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
+
+              <div className="card" style={{ boxShadow: 'none', border: '1px solid #e2e8f0' }}>
+                <div className="card-header header-actions">
+                  <h2 className="card-title">
+                    {activeTab.editingInvoiceId ? `Editing Sale ${formatInvoiceId(activeTab.editingInvoiceId)}` : 'Cart'} - {activeTab.activeCustomer ? activeTab.activeCustomer.name : <span className="text-danger">No Customer Selected</span>}
+                  </h2>
+                </div>
+                
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>S.No</th><th>Product</th><th>Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                      {activeTab.cart.length ? activeTab.cart.map((item, idx) => (
+                        <tr key={`${item.id}-${idx}`}>
+                          <td className="fw-bold">{idx + 1}</td>
+                          <td><span className="product-name-large">{item.name}</span></td>
+                          <td>{formatMoney(item.price)}</td>
+                          <td>
+                            <input
+                              type="number"
+                              className="quantity-input form-control mb-0 qty-input-large"
+                              min="1"
+                              max={item.stock}
+                              value={item.quantity}
+                              onChange={e => updateQuantity(idx, e.target.value)}
+                              onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateQuantity(idx, 1); }}
+                            />
+                            {activeTab.editingInvoiceId && item.originalQuantity !== undefined && (
+                              <div className="text-muted fs-sm mt-1">Previous: {item.originalQuantity}</div>
+                            )}
+                          </td>
+                          <td className="price-text">{formatMoney(item.price * (Number(item.quantity) || 0))}</td>
+                          <td><button className="btn btn-danger" onClick={() => removeCartItem(idx)}>Remove</button></td>
+                        </tr>
+                      )) : <tr><td colSpan={6} className="empty-state">Cart is empty. Click "+ Add Products" to begin.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+
+                {activeTab.cart.length > 0 && (
+                  <div className="receipt-wrapper">
+                    <div className="receipt-panel full-width-panel">
+                      <h3 className="receipt-header">Bill Summary</h3>
+                      <div className="receipt-summary-header">
+                        <span className="fw-bold text-slate">Total Items: {activeTab.cart.length}</span>
+                        <span className="fw-bold text-slate">Total Qty: {activeTab.cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="fw-bold">Subtotal:</span>
+                        <span className="text-center text-muted"></span>
+                        <span className="text-right">{formatMoney(activeBillingDetails.subtotal)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="fw-bold">Discount:</span>
+                        <div className="input-with-symbol">
+                          <input type="number" min="0" max="100" value={activeTab.discountPercent} onChange={e => updateActiveTab({ discountPercent: Number(e.target.value) })} className="form-control discount-input" />
+                          <span className="text-muted">%</span>
+                        </div>
+                        <span className="text-right text-danger">-{formatMoney(activeBillingDetails.discountAmount)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="fw-bold">Total Tax:</span>
+                        <div className="input-with-symbol">
+                          <input type="number" min="0" max="100" value={activeTab.taxPercent} onChange={e => updateActiveTab({ taxPercent: Number(e.target.value) })} className="form-control discount-input" />
+                          <span className="text-muted">%</span>
+                        </div>
+                        <span className="text-right"></span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="text-muted">Subtotal (Excl. Tax):</span><span className="text-center text-muted"></span>
+                        <span className="text-right">{formatMoney(activeBillingDetails.taxableAmount)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="text-muted">CGST:</span>
+                        <span className="text-center text-muted">{activeBillingDetails.cgstPercent.toFixed(1).replace('.0', '')}%</span>
+                        <span className="text-right">+{formatMoney(activeBillingDetails.cgst)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="text-muted">SGST:</span>
+                        <span className="text-center text-muted">{activeBillingDetails.sgstPercent.toFixed(1).replace('.0', '')}%</span>
+                        <span className="text-right">+{formatMoney(activeBillingDetails.sgst)}</span>
+                      </div>
+                      <div className="receipt-row receipt-three-col">
+                        <span className="text-muted">Roundoff:</span><span className="text-center text-muted"></span>
+                        <span className="text-right">{activeBillingDetails.roundoff > 0 ? '+' : ''}{formatMoney(activeBillingDetails.roundoff)}</span>
+                      </div>
+                      <div className="receipt-total receipt-three-col">
+                        <span>Final Total:</span><span className="text-center text-muted"></span>
+                        <span className="text-success text-right">{formatMoney(activeBillingDetails.finalTotal)}</span>
+                      </div>
+                      <button className="btn btn-success btn-checkout" onClick={proceedToPayment}>Proceed to Payment</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: DRAFTS LIST --- */}
+        {view === 'drafts-list' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Saved Drafts ({drafts.length})</h2>
+            </div>
+            
+            <div className="table-responsive">
+              <table className="block-table data-table">
+                <thead>
+                  <tr>
+                    <th>Saved On</th>
+                    <th>Draft Name</th>
+                    <th>Items</th>
+                    <th>Customer Selected</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drafts.length ? drafts.map(draft => (
+                    <tr key={draft.draftId} className="product-row available">
+                      <td className="cell-padded">{new Date(draft.savedAt).toLocaleString()}</td>
+                      <td className="fw-bold cell-padded">{draft.draftName}</td>
+                      <td className="cell-padded">{draft.cart.length} item(s)</td>
+                      <td className="cell-padded">{draft.activeCustomer ? draft.activeCustomer.name : <span className="text-muted">None</span>}</td>
+                      <td className="cell-padded">
+                        <div className="btn-group">
+                          <button className="btn btn-primary" onClick={() => resumeDraft(draft)}>Resume Sale</button>
+                          <button className="btn btn-danger" onClick={() => deleteDraft(draft.draftId)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan={5} className="empty-state">No saved drafts found.</td></tr>}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -2321,77 +2323,48 @@ export default function App() {
           <div className="card">
             <div className="card-header header-actions">
               <h2 className="card-title">
-                Checkout & Payment - {activeCustomer ? activeCustomer.name : 'Customer'}
+                Checkout & Payment - {activeTab.activeCustomer ? activeTab.activeCustomer.name : 'Customer'}
               </h2>
-              <button 
-                className="btn btn-secondary action-buttons-right" 
-                onClick={() => setView('list')}
-              >
-                Back to Cart
-              </button>
+              <button className="btn btn-secondary action-buttons-right" onClick={() => setView('list')}>Back to Cart</button>
             </div>
-
             <div className="form-container payment-container">
               <div className="form-group">
                 <label className="form-label">Date of Sale:</label>
                 <input
-                  type="date"
-                  className="form-control payment-input"
-                  value={saleDate}
-                  onChange={e => setSaleDate(e.target.value)}
-                  disabled={!!editingInvoiceId} 
+                  type="date" className="form-control payment-input"
+                  value={activeTab.saleDate}
+                  onChange={e => updateActiveTab({ saleDate: e.target.value })}
+                  disabled={!!activeTab.editingInvoiceId} 
                 />
               </div>
-
               <div className="form-group">
                 <label className="form-label">Final Payable Amount:</label>
-                <input
-                  type="text"
-                  className="form-control fw-bold price-text fs-xxl"
-                  value={`${formatMoney(billingDetails.finalTotal)}`}
-                  readOnly
-                />
+                <input type="text" className="form-control fw-bold price-text fs-xxl" value={`${formatMoney(activeBillingDetails.finalTotal)}`} readOnly />
               </div>
-
               <div className="form-group">
                 <label className="form-label">Payment Method:</label>
                 <div className="payment-method-row">
                   <select 
-                    className={`form-control mb-0 payment-input pay-later-select ${isPayLater ? 'pay-later-disabled' : 'pay-later-active'}`} 
-                    value={paymentMethod} 
-                    onChange={e => setPaymentMethod(e.target.value)}
-                    disabled={isPayLater}
+                    className={`form-control mb-0 payment-input pay-later-select ${activeTab.isPayLater ? 'pay-later-disabled' : 'pay-later-active'}`} 
+                    value={activeTab.paymentMethod} 
+                    onChange={e => updateActiveTab({ paymentMethod: e.target.value })}
+                    disabled={activeTab.isPayLater}
                   >
-                    <option value="Cash">Cash</option>
-                    <option value="PhonePe">PhonePe</option>
-                    <option value="GPay">GPay</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="DD">DD</option>
-                    <option value="Debit Card">Debit Card</option>
-                    <option value="Credit Card">Credit Card</option>
+                    <option value="Cash">Cash</option><option value="PhonePe">PhonePe</option><option value="GPay">GPay</option>
+                    <option value="Cheque">Cheque</option><option value="DD">DD</option><option value="Debit Card">Debit Card</option><option value="Credit Card">Credit Card</option>
                   </select>
-                  
                   <button 
-                    className={`btn btn-pay-later ${isPayLater ? 'btn-warning' : 'btn-secondary'}`}
-                    onClick={() => setIsPayLater(!isPayLater)}
-                    type="button"
+                    className={`btn btn-pay-later ${activeTab.isPayLater ? 'btn-warning' : 'btn-secondary'}`}
+                    onClick={() => updateActiveTab({ isPayLater: !activeTab.isPayLater })} type="button"
                   >
-                    {isPayLater ? '✓ Marked as Unpaid' : 'Pay Later (Khata)'}
+                    {activeTab.isPayLater ? '✓ Marked as Unpaid' : 'Pay Later (Khata)'}
                   </button>
                 </div>
-                {isPayLater && (
-                  <div className="pay-later-warning">
-                    * This bill will be recorded as an unpaid balance.
-                  </div>
-                )}
+                {activeTab.isPayLater && <div className="pay-later-warning">* This bill will be recorded as an unpaid balance.</div>}
               </div>
-
               <div className="modal-actions payment-actions">
-                <button 
-                  className={`btn btn-checkout ${isPayLater ? 'btn-warning' : 'btn-success'}`} 
-                  onClick={submitFinalSale}
-                >
-                  {editingInvoiceId ? 'Save Edits' : 'Complete & Save Sale'}
+                <button className={`btn btn-checkout ${activeTab.isPayLater ? 'btn-warning' : 'btn-success'}`} onClick={submitFinalSale}>
+                  {activeTab.editingInvoiceId ? 'Save Edits' : 'Complete & Save Sale'}
                 </button>
               </div>
             </div>
@@ -2443,7 +2416,7 @@ export default function App() {
                       <td className={`price-text fw-bold cell-padded ${invoice.isReturn ? 'text-danger' : 'text-success'}`}>
                         {formatMoney(invoice.finalTotal || invoice.totalAmount)}
                       </td>
-                      <td className="cell-padded">{new Date(invoice.orderDate).toLocaleString()}</td>
+                      <td className="cell-padded">{new Date(invoice.orderDate).toLocaleDateString('en-GB')}</td>
                       <td className="cell-padded">
                         <div className="btn-group">
                           {!invoice.isReturn && (
@@ -2508,7 +2481,7 @@ export default function App() {
                 <tbody>
                   {paginatedInvoiceHistory.length ? paginatedInvoiceHistory.map(log => (
                     <tr key={log.id} className="product-row available">
-                      <td className="cell-padded">{new Date(log.editDate).toLocaleString()}</td>
+                      <td className="cell-padded">{new Date(log.editDate).toLocaleString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{formatInvoiceId(log.originalInvoiceId)}</td>
                       <td className="cell-padded">{log.customerName}</td>
                       <td className="cell-padded">
@@ -2527,6 +2500,55 @@ export default function App() {
               </table>
             </div>
             {renderPagination(filteredInvoiceHistory.length)}
+          </div>
+        )}
+
+        {/* --- INTERFACE PATH TARGET: PURCHASE EDIT HISTORY LOGS --- */}
+        {view === 'purchase-edit-history' && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title mb-0">Purchase Edit History</h2>
+              <input 
+                type="text" 
+                className="form-control header-search" 
+                placeholder="Search seller or ID..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+              />
+            </div>
+            
+            <div className="table-responsive">
+              <table className="block-table data-table">
+                <thead>
+                  <tr>
+                    <th>Edit Date</th>
+                    <th>Original Purchase ID</th>
+                    <th>Seller Name</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedPurchaseInvoiceHistory.length ? paginatedPurchaseInvoiceHistory.map(log => (
+                    <tr key={log.id} className="product-row available">
+                      <td className="cell-padded">{new Date(log.editDate).toLocaleString('en-GB')}</td>
+                      <td className="fw-bold cell-padded">{formatPurchaseInvoiceId(log.originalPurchaseInvoiceId)}</td>
+                      <td className="cell-padded">{log.sellerName}</td>
+                      <td className="cell-padded">
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => setViewingPurchaseHistoryLog(log)}
+                        >
+                          View Comparison
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={4} className="empty-state">No purchase edit history found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {renderPagination(filteredPurchaseInvoiceHistory.length)}
           </div>
         )}
 
@@ -2559,7 +2581,7 @@ export default function App() {
                 <tbody>
                   {paginatedInventoryHistory.length ? paginatedInventoryHistory.map(log => (
                     <tr key={log.id} className="product-row available">
-                      <td className="cell-padded">{new Date(log.timestamp).toLocaleString()}</td>
+                      <td className="cell-padded">{new Date(log.timestamp).toLocaleString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{log.productName}</td>
                       <td className="cell-padded"><span className="badge">{log.actionType}</span></td>
                       <td className="text-muted cell-padded">{log.description}</td>
@@ -2603,7 +2625,7 @@ export default function App() {
               </div>
               <div className="info-block">
                 <span className="info-label">Original Date</span>
-                <strong className="info-value">{new Date(returnSaleData.orderDate).toLocaleString()}</strong>
+                <strong className="info-value">{new Date(returnSaleData.orderDate).toLocaleDateString('en-GB')}</strong>
               </div>
               <div className="info-block">
                 <span className="info-label">Original Total</span>
@@ -2760,8 +2782,8 @@ export default function App() {
                 </strong>
               </div>
               <div className="info-block">
-                <span className="info-label">Date & Time</span>
-                <strong className="info-value">{new Date(selectedInvoice.orderDate).toLocaleString()}</strong>
+                <span className="info-label">Date</span>
+                <strong className="info-value">{new Date(selectedInvoice.orderDate).toLocaleDateString('en-GB')}</strong>
               </div>
             </div>
             
@@ -2954,7 +2976,6 @@ export default function App() {
                     mobile: '', 
                     city: '', 
                     location: '', 
-                    balance: 0, 
                     state: '' 
                   })
                   setShowCustomerModal(true) 
@@ -2972,7 +2993,6 @@ export default function App() {
                     <th>Customer Name</th>
                     <th>Contact</th>
                     <th>Location Details</th>
-                    <th>Balance</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -2993,16 +3013,13 @@ export default function App() {
                           </div>
                         )}
                       </td>
-                      <td className={`fw-bold cell-padded ${c.balance > 0 ? 'text-danger' : 'text-success'}`}>
-                        {formatMoney(c.balance)}
-                      </td>
                       <td className="cell-padded">
                         <div className="btn-group">
                           <button 
                             className="btn btn-secondary" 
                             onClick={() => setViewingCustomer(c)}
                           >
-                            View
+                            View Details
                           </button>
                           <button 
                             className="btn btn-warning" 
@@ -3015,7 +3032,6 @@ export default function App() {
                                 mobile: c.mobile || '', 
                                 city: c.city || '',
                                 location: c.location || '',
-                                balance: c.balance || 0,
                                 state: c.state || ''
                               })
                               setShowCustomerModal(true) 
@@ -3027,7 +3043,7 @@ export default function App() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={6} className="empty-state">No customers found.</td></tr>
+                    <tr><td colSpan={5} className="empty-state">No customers found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -3130,7 +3146,7 @@ export default function App() {
       {/* =========================================
           --- SYSTEM INTERACTIVE OVERLAYS ---
           ========================================= */}
-      
+
       {/* Detailed Edit History Comparison Modal */}
       {viewingHistoryLog && (
         <div className="modal-overlay">
@@ -3138,7 +3154,7 @@ export default function App() {
             <h3 className="modal-header-title">Edit History Comparison</h3>
             <p className="text-dark-muted mb-0">
               Bill: <strong>{formatInvoiceId(viewingHistoryLog.originalInvoiceId)}</strong> | 
-              Edited On: {new Date(viewingHistoryLog.editDate).toLocaleString()}
+              Edited On: {new Date(viewingHistoryLog.editDate).toLocaleString('en-GB')}
             </p>
 
             <div className="comparison-grid">
@@ -3203,6 +3219,78 @@ export default function App() {
         </div>
       )}
 
+      {/* Detailed PURCHASE Edit History Comparison Modal */}
+      {viewingPurchaseHistoryLog && (
+        <div className="modal-overlay">
+          <div className="modal-content modal-large-auto">
+            <h3 className="modal-header-title">Purchase Edit History Comparison</h3>
+            <p className="text-dark-muted mb-0">
+              Purchase ID: <strong>{formatPurchaseInvoiceId(viewingPurchaseHistoryLog.originalPurchaseInvoiceId)}</strong> | 
+              Edited On: {new Date(viewingPurchaseHistoryLog.editDate).toLocaleString('en-GB')}
+            </p>
+
+            <div className="comparison-grid">
+              
+              {/* OLD SNAPSHOT */}
+              <div className="receipt-panel snapshot-old">
+                <h4 className="snapshot-title-old">
+                  Old Purchase Snapshot
+                </h4>
+                <div className="comparison-total-row">
+                  <span className="fw-bold">Total Amount:</span>
+                  <span className="fw-bold text-danger">{formatMoney(viewingPurchaseHistoryLog.oldFinalTotal)}</span>
+                </div>
+                <table className="data-table comparison-table">
+                  <thead>
+                    <tr>
+                      <th className="th-old">Product</th>
+                      <th className="th-old">Qty</th>
+                      <th className="th-old">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderHistoryItems(viewingPurchaseHistoryLog.oldItemsJson)}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* NEW SNAPSHOT */}
+              <div className="receipt-panel snapshot-new">
+                <h4 className="snapshot-title-new">
+                  New Purchase Snapshot
+                </h4>
+                <div className="comparison-total-row">
+                  <span className="fw-bold">Total Amount:</span>
+                  <span className="fw-bold text-success">{formatMoney(viewingPurchaseHistoryLog.newFinalTotal)}</span>
+                </div>
+                <table className="data-table comparison-table">
+                  <thead>
+                    <tr>
+                      <th className="th-new">Product</th>
+                      <th className="th-new">Qty</th>
+                      <th className="th-new">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderHistoryItems(viewingPurchaseHistoryLog.newItemsJson)}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+
+            <div className="modal-actions center-actions mt-2">
+              <button 
+                onClick={() => setViewingPurchaseHistoryLog(null)} 
+                className="btn btn-secondary w-100"
+              >
+                Close Comparison
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View Customer Details Modal */}
       {viewingCustomer && (
         <div className="modal-overlay">
@@ -3233,14 +3321,8 @@ export default function App() {
                 <span className="info-label">State</span>
                 <strong className="info-value">{viewingCustomer.state || 'N/A'}</strong>
               </div>
-              <div className="info-block">
-                <span className="info-label">Ledger Balance</span>
-                <strong className={`info-value ${viewingCustomer.balance > 0 ? 'text-danger' : 'text-success'}`}>
-                  {formatMoney(viewingCustomer.balance)}
-                </strong>
-              </div>
             </div>
-            <div className="modal-actions center-actions">
+            <div className="modal-actions center-actions mt-1">
               <button 
                 onClick={() => setViewingCustomer(null)} 
                 className="btn btn-secondary w-100"
@@ -3295,7 +3377,7 @@ export default function App() {
                 </strong>
               </div>
             </div>
-            <div className="modal-actions center-actions">
+            <div className="modal-actions center-actions mt-1">
               <button 
                 onClick={() => setViewingProduct(null)} 
                 className="btn btn-secondary w-100"
@@ -3346,7 +3428,7 @@ export default function App() {
                 </thead>
                 <tbody>
                   {filteredProducts.map(product => {
-                    const cartItem = cart.find(c => c.id === product.id)
+                    const cartItem = activeTab.cart.find(c => c.id === product.id)
                     const inCartQty = cartItem ? (Number(cartItem.quantity) || 0) : 0
                     const availableStock = product.stock - inCartQty
                     const isOutOfStock = availableStock <= 0
@@ -3466,7 +3548,7 @@ export default function App() {
                 min="0" 
               />
             </div>
-            <div className="modal-actions">
+            <div className="modal-actions mt-1">
               <button 
                 onClick={closeInventoryModal} 
                 className="btn btn-secondary"
@@ -3655,17 +3737,6 @@ export default function App() {
                   value={customerForm.state} 
                   onChange={e => setCustomerForm({ ...customerForm, state: e.target.value })} 
                   placeholder="Enter State" 
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Ledger Balance (₹):</label>
-                <input 
-                  type="number" 
-                  className="form-control" 
-                  value={customerForm.balance} 
-                  onChange={e => setCustomerForm({ ...customerForm, balance: Number(e.target.value) })} 
-                  placeholder="0.00" 
                 />
               </div>
             </div>

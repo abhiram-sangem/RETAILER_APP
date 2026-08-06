@@ -1,10 +1,19 @@
-package com.rt;
+package com.rt.customers;
 
 import java.util.ArrayList;
 import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/customers")
@@ -38,10 +47,16 @@ public class CustomerController {
             Customer existing = null;
             
             if (c.getMobile() != null && !c.getMobile().trim().isEmpty()) {
-                existing = customerRepository.findFirstByMobile(c.getMobile().trim()).orElse(null);
+                String mobile = c.getMobile().trim();
+                existing = customerRepository.findAll().stream()
+                        .filter(cust -> mobile.equals(cust.getMobile()))
+                        .findFirst().orElse(null);
             }
             if (existing == null) {
-                existing = customerRepository.findFirstByName(c.getName().trim()).orElse(null);
+                String name = c.getName().trim();
+                existing = customerRepository.findAll().stream()
+                        .filter(cust -> name.equals(cust.getName()))
+                        .findFirst().orElse(null);
             }
             
             if (existing != null) {

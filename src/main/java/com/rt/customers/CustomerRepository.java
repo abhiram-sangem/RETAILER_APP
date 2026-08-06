@@ -1,12 +1,12 @@
-package com.rt;
+package com.rt.customers;
 
-import java.util.Optional;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
-    Optional<Customer> findFirstByMobile(String mobile);
-    Optional<Customer> findFirstByName(String name);
+    // This exact line is what the controller was crying about!
+    List<Customer> findByName(String name);
 }

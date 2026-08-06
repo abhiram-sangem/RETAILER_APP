@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 export const productService = {
   getProducts: () =>
@@ -11,14 +11,7 @@ export const productService = {
     fetch(`${API_URL}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name, 
-        purchasePrice,
-        mrp,
-        price, 
-        stock,
-        hsnCode
-      }), 
+      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add product')
       return res.json()
@@ -28,14 +21,7 @@ export const productService = {
     fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name, 
-        purchasePrice,
-        mrp,
-        price, 
-        stock,
-        hsnCode
-      }), 
+      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update product')
       return res.json()
@@ -66,24 +52,11 @@ export const invoiceService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         customerName, 
-        cartItems: cartItems.map(item => ({ 
-          id: item.id || item.product?.id, 
-          quantity: item.quantity, 
-          price: item.price 
-        })), 
-        grossTotal, 
-        discountPercent, 
-        cgst, 
-        sgst, 
-        finalTotal,
-        paymentMethod,
-        orderDate
+        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+        grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate
       }),
     }).then(async res => {
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Invoice creation failed');
-      }
+      if (!res.ok) throw new Error(await res.text() || 'Invoice creation failed');
       return res.json();
     }),
 
@@ -93,24 +66,11 @@ export const invoiceService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         customerName, 
-        cartItems: cartItems.map(item => ({ 
-          id: item.id || item.product?.id, 
-          quantity: item.quantity, 
-          price: item.price 
-        })), 
-        grossTotal, 
-        discountPercent, 
-        cgst, 
-        sgst, 
-        finalTotal,
-        paymentMethod,
-        orderDate
+        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+        grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate
       }),
     }).then(async res => {
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Invoice update failed');
-      }
+      if (!res.ok) throw new Error(await res.text() || 'Invoice update failed');
       return res.json();
     }),
 
@@ -119,22 +79,11 @@ export const invoiceService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        cartItems: cartItems.map(item => ({ 
-          id: item.id || item.product?.id, 
-          quantity: item.quantity, 
-          price: item.price 
-        })), 
-        grossTotal, 
-        discountPercent, 
-        cgst, 
-        sgst, 
-        finalTotal
+        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+        grossTotal, discountPercent, cgst, sgst, finalTotal
       }),
     }).then(async res => {
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Return processing failed');
-      }
+      if (!res.ok) throw new Error(await res.text() || 'Return processing failed');
       return res.json();
     }),
 
@@ -214,25 +163,24 @@ export const purchaseInvoiceService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sellerName,
-        purchaseDate,
-        customInvoiceId,
-        grossTotal,
-        discountPercent,
-        cgst,
-        sgst,
-        finalTotal,
-        items: purchaseCart.map(item => ({
-          productId: item.id || item.product?.id,
-          quantity: item.quantity,
-          purchasePrice: item.purchasePrice
-        }))
+        sellerName, purchaseDate, customInvoiceId, grossTotal, discountPercent, cgst, sgst, finalTotal,
+        items: purchaseCart.map(item => ({ productId: item.id || item.product?.id, quantity: item.quantity, purchasePrice: item.purchasePrice }))
       }),
     }).then(async res => {
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Purchase invoice creation failed');
-      }
+      if (!res.ok) throw new Error(await res.text() || 'Purchase invoice creation failed');
+      return res.json()
+    }),
+
+  update: (id, sellerName, purchaseDate, customInvoiceId, purchaseCart, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
+    fetch(`${API_URL}/api/purchase-invoices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sellerName, purchaseDate, customInvoiceId, grossTotal, discountPercent, cgst, sgst, finalTotal,
+        items: purchaseCart.map(item => ({ productId: item.id || item.product?.id, quantity: item.quantity, purchasePrice: item.purchasePrice }))
+      }),
+    }).then(async res => {
+      if (!res.ok) throw new Error(await res.text() || 'Purchase invoice update failed');
       return res.json()
     }),
 }
@@ -247,5 +195,29 @@ export const historyService = {
     fetch(`${API_URL}/api/history/invoices`).then(res => {
       if (!res.ok) throw new Error('Failed to load invoice history')
       return res.json()
+    }),
+  getPurchaseInvoiceHistory: () =>
+    fetch(`${API_URL}/api/history/purchase-invoices`).then(res => {
+      if (!res.ok) throw new Error('Failed to load purchase history')
+      return res.json()
+    })
+}
+
+export const receiptService = {
+  // Added discountAmount and receiptDate
+  create: (customerId, amount, discountAmount, paymentMode, receiptDate, remarks) =>
+    fetch(`${API_URL}/api/receipts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, amount, discountAmount, paymentMode, receiptDate, remarks })
+    }).then(async res => {
+      if (!res.ok) throw new Error(await res.text() || 'Failed to generate receipt');
+      return res.json();
+    }),
+
+  getReceipts: () =>
+    fetch(`${API_URL}/api/receipts`).then(res => {
+      if (!res.ok) throw new Error('Failed to load receipts');
+      return res.json();
     })
 }

@@ -4,6 +4,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import com.rt.inventory.Product;
+import com.rt.inventory.ProductRepository;
+
 @Component
 public class DataInitializer implements CommandLineRunner {
 

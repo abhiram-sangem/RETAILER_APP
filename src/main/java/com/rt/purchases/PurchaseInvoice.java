@@ -1,4 +1,4 @@
-package com.rt;
+package com.rt.purchases;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;

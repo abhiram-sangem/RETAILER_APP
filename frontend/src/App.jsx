@@ -49,20 +49,39 @@ export default function App() {
   const [inventoryHistory, setInventoryHistory] = useState([])
   const [invoiceHistory, setInvoiceHistory] = useState([])
   const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([])
-  const [viewingHistoryLog, setViewingHistoryLog] = useState(null)
-  const [viewingPurchaseHistoryLog, setViewingPurchaseHistoryLog] = useState(null)
+  
+  // Replace Modals with Dedicated Page State
+  const [historyCompareData, setHistoryCompareData] = useState(null)
 
-  // Ledger Statement State
+  // Ledger & Preview States
   const [viewingCustomerStatement, setViewingCustomerStatement] = useState(null)
+  const [ledgerPreview, setLedgerPreview] = useState(null) 
+  const [viewingReceipt, setViewingReceipt] = useState(null) 
 
   // =========================================
-  // --- Search & Pagination States ---
+  // --- Search, Date Filters & Pagination ---
   // =========================================
   const [searchQuery, setSearchQuery] = useState('')
   const [purchaseSearchQuery, setPurchaseSearchQuery] = useState('')
+  const [ledgerSearchQuery, setLedgerSearchQuery] = useState('') 
+  
+  // Advanced Smart Date Filtering State
+  const [dateFilterRange, setDateFilterRange] = useState('all') 
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
   const [isSellerDropdownOpen, setIsSellerDropdownOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
+
+  // =========================================
+  // --- LIVE CLOCK FOR RECEIPTS ---
+  // =========================================
+  const [liveTime, setLiveTime] = useState(new Date())
+  useEffect(() => {
+    const timerId = setInterval(() => setLiveTime(new Date()), 1000)
+    return () => clearInterval(timerId)
+  }, [])
 
   // =========================================
   // --- MULTI-TAB SALES STATE ENGINE ---
@@ -145,9 +164,9 @@ export default function App() {
   const [receiptSearch, setReceiptSearch] = useState('')
   const [isReceiptDropdownOpen, setIsReceiptDropdownOpen] = useState(false)
   const [receiptAmount, setReceiptAmount] = useState('')
-  const [receiptDiscount, setReceiptDiscount] = useState('') // NEW: "Less" tracking
+  const [receiptDiscount, setReceiptDiscount] = useState('') 
   const [receiptMethod, setReceiptMethod] = useState('Cash')
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]) // NEW: Manual Date
+  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]) 
   const [receiptRemarks, setReceiptRemarks] = useState('Payment received with thanks.')
 
   // =========================================
@@ -196,15 +215,21 @@ export default function App() {
     localStorage.setItem('purchaseCart', JSON.stringify(purchaseCart))
   }, [purchaseCart])
 
+  // Instantly reset search & ALL dates when changing views!
   useEffect(() => {
     setSearchQuery('')
     setPurchaseSearchQuery('')
+    setLedgerSearchQuery('')
+    setDateFilterRange('all') 
+    setStartDate('')
+    setEndDate('')
     setCurrentPage(1)
+    setViewingReceipt(null)
   }, [view])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, purchaseSearchQuery, itemsPerPage])
+  }, [searchQuery, purchaseSearchQuery, ledgerSearchQuery, dateFilterRange, startDate, endDate, itemsPerPage])
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -217,60 +242,52 @@ export default function App() {
   };
 
   // =========================================
+  // --- Smart Date Filtering Helper ---
+  // =========================================
+  const isWithinDateRange = (dateInput) => {
+    if (!dateInput) return false;
+    const dateToCheck = new Date(dateInput);
+    dateToCheck.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (dateFilterRange === 'today') {
+      return dateToCheck.getTime() === today.getTime();
+    }
+    if (dateFilterRange === 'week') {
+      const lastWeek = new Date(today);
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      return dateToCheck >= lastWeek && dateToCheck <= today;
+    }
+    if (dateFilterRange === 'month') {
+      const lastMonth = new Date(today);
+      lastMonth.setDate(lastMonth.getDate() - 30);
+      return dateToCheck >= lastMonth && dateToCheck <= today;
+    }
+    if (dateFilterRange === 'year') {
+      const thisYear = new Date(today.getFullYear(), 0, 1);
+      return dateToCheck >= thisYear && dateToCheck <= today;
+    }
+    if (dateFilterRange === 'custom') {
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        if (dateToCheck < s) return false;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(0, 0, 0, 0);
+        if (dateToCheck > e) return false;
+      }
+    }
+    return true; 
+  }
+
+  // =========================================
   // --- Core Calculation Engines (useMemo) ---
   // =========================================
-  
-  // SPLIT LEDGER: Customer Purchases (Our Sales) Table
-  const customerSalesData = useMemo(() => {
-    if (!viewingCustomerStatement) return [];
-    
-    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const targetNameNorm = normalizeName(viewingCustomerStatement.name);
-    
-    let sales = [];
-    invoices.forEach(inv => {
-      const invNameNorm = normalizeName(inv.customerName);
-      if (invNameNorm === targetNameNorm) {
-        sales.push({
-          sortDate: new Date(inv.orderDate),
-          type: inv.isReturn ? 'Sale Return' : 'Sale Bill',
-          ref: formatInvoiceId(inv.id),
-          method: inv.paymentMethod || 'Cash',
-          amount: inv.finalTotal || inv.totalAmount || 0,
-          isReturn: inv.isReturn
-        });
-      }
-    });
 
-    return sales.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime()); // Newest at top
-  }, [viewingCustomerStatement, invoices]);
-
-  // SPLIT LEDGER: Customer Payments (Receipts) Table
-  const customerReceiptsData = useMemo(() => {
-    if (!viewingCustomerStatement) return [];
-    
-    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const targetNameNorm = normalizeName(viewingCustomerStatement.name);
-    const targetId = viewingCustomerStatement.id;
-    
-    let recs = [];
-    receipts.forEach(rec => {
-      const recNameNorm = normalizeName(rec.customerName);
-      if (rec.customerId === targetId || recNameNorm === targetNameNorm) {
-        recs.push({
-          sortDate: new Date(rec.receiptDate),
-          ref: formatReceiptId(rec.id),
-          method: rec.paymentMode,
-          amount: rec.amount,
-          discount: rec.discountAmount || 0 // Pass the discount down
-        });
-      }
-    });
-
-    return recs.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime()); // Newest at top
-  }, [viewingCustomerStatement, receipts]);
-
-  // FULL LEDGER STATEMENT ENGINE (Double Entry)
   const customerStatementData = useMemo(() => {
     if (!viewingCustomerStatement) return [];
     const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -316,7 +333,6 @@ export default function App() {
           ref: formatReceiptId(rec.id),
           method: rec.paymentMode,
           debit: 0,
-          // LEDGER CREDIT = Actual Cash + The Discount Given
           credit: rec.amount + recDiscount,
           isCashTx: false
         });
@@ -334,6 +350,19 @@ export default function App() {
     return statement.reverse();
   }, [viewingCustomerStatement, invoices, receipts]);
 
+  const filteredCustomerStatementData = useMemo(() => {
+    return customerStatementData.filter(row => {
+      const safeQuery = (ledgerSearchQuery || '').toLowerCase();
+      const matchesText = !safeQuery || 
+        (row.ref && row.ref.toLowerCase().includes(safeQuery)) ||
+        (row.method && row.method.toLowerCase().includes(safeQuery)) ||
+        (row.type && row.type.toLowerCase().includes(safeQuery));
+      
+      const matchesDate = isWithinDateRange(row.sortDate);
+
+      return matchesText && matchesDate;
+    });
+  }, [customerStatementData, ledgerSearchQuery, dateFilterRange, startDate, endDate]);
 
   const salesStats = useMemo(() => {
     const dailyMap = {}; const weeklyMap = {}; const monthlyMap = {}; const yearlyMap = {};
@@ -460,7 +489,7 @@ export default function App() {
   }, [purchaseInvoices]);
 
   // =========================================
-  // --- Real-time Search Filter Pipelines ---
+  // --- Master Filter & Search Pipelines ---
   // =========================================
   const safeSearch = (searchQuery || '').toLowerCase();
   const safePurchaseSearch = (purchaseSearchQuery || '').toLowerCase();
@@ -499,37 +528,44 @@ export default function App() {
   )
 
   const filteredInvoices = invoices.filter(i =>
-    (i.customerName && i.customerName.toLowerCase().includes(safeSearch)) || 
-    formatInvoiceId(i.id).toLowerCase().includes(safeSearch)
+    ((i.customerName && i.customerName.toLowerCase().includes(safeSearch)) || 
+    formatInvoiceId(i.id).toLowerCase().includes(safeSearch)) &&
+    isWithinDateRange(i.orderDate)
   )
 
   const filteredPurchaseInvoices = purchaseInvoices.filter(i =>
-    (i.sellerName && i.sellerName.toLowerCase().includes(safePurchaseSearch)) ||
+    ((i.sellerName && i.sellerName.toLowerCase().includes(safePurchaseSearch)) ||
     (i.id && i.id.toString().includes(safePurchaseSearch)) ||
-    (i.customInvoiceId && i.customInvoiceId.toLowerCase().includes(safePurchaseSearch))
+    (i.customInvoiceId && i.customInvoiceId.toLowerCase().includes(safePurchaseSearch))) &&
+    isWithinDateRange(i.purchaseDate)
   )
 
   const filteredReceipts = receipts.filter(r => 
-    (r.customerName && r.customerName.toLowerCase().includes(safeSearch)) ||
+    ((r.customerName && r.customerName.toLowerCase().includes(safeSearch)) ||
     (r.paymentMode && r.paymentMode.toLowerCase().includes(safeSearch)) ||
-    formatReceiptId(r.id).toLowerCase().includes(safeSearch)
+    formatReceiptId(r.id).toLowerCase().includes(safeSearch)) &&
+    isWithinDateRange(r.receiptDate)
   )
 
   const filteredInventoryHistory = inventoryHistory.filter(log => 
-    (log.productName && log.productName.toLowerCase().includes(safeSearch)) ||
-    (log.actionType && log.actionType.toLowerCase().includes(safeSearch))
+    ((log.productName && log.productName.toLowerCase().includes(safeSearch)) ||
+    (log.actionType && log.actionType.toLowerCase().includes(safeSearch))) &&
+    isWithinDateRange(log.timestamp)
   )
 
   const filteredInvoiceHistory = invoiceHistory.filter(log => 
-    (log.customerName && log.customerName.toLowerCase().includes(safeSearch)) ||
-    formatInvoiceId(log.originalInvoiceId).toLowerCase().includes(safeSearch)
+    ((log.customerName && log.customerName.toLowerCase().includes(safeSearch)) ||
+    formatInvoiceId(log.originalInvoiceId).toLowerCase().includes(safeSearch)) &&
+    isWithinDateRange(log.editDate)
   )
 
   const filteredPurchaseInvoiceHistory = purchaseInvoiceHistory.filter(log => 
-    (log.sellerName && log.sellerName.toLowerCase().includes(safeSearch)) ||
-    formatPurchaseInvoiceId(log.originalPurchaseInvoiceId).toLowerCase().includes(safeSearch)
+    ((log.sellerName && log.sellerName.toLowerCase().includes(safeSearch)) ||
+    formatPurchaseInvoiceId(log.originalPurchaseInvoiceId).toLowerCase().includes(safeSearch)) &&
+    isWithinDateRange(log.editDate)
   )
 
+  // Pagination Handlers
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
   
@@ -544,7 +580,6 @@ export default function App() {
 
   function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])) }
   function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])) }
-  // FIXED: Ensure Sales List sorts strictly by Invoice ID (newest to oldest)
   function loadInvoices() { invoiceService.getInvoices().then(data => setInvoices((data || []).sort((a, b) => b.id - a.id))) }
   function loadPurchaseInvoices() { purchaseInvoiceService.getPurchaseInvoices().then(data => setPurchaseInvoices((data || []).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)))) }
   function loadReceipts() { receiptService.getReceipts().then(data => setReceipts(Array.isArray(data) ? data : [])) }
@@ -558,7 +593,6 @@ export default function App() {
   // --- Outbound Sales Process Handlers ---
   // =========================================
   
-  // Tab Controls
   const openNewTab = () => {
     const newTab = generateNewTab(`Bill ${salesTabs.length + 1}`);
     setSalesTabs([...salesTabs, newTab]);
@@ -578,7 +612,6 @@ export default function App() {
     if (activeTabId === idToClose) setActiveTabId(newTabs[newTabs.length - 1].id);
   }
 
-  // Draft Controls
   const saveToDrafts = () => {
     if (activeTab.cart.length === 0 && !activeTab.activeCustomer) {
       return window.alert("Cannot save an empty tab to drafts.");
@@ -712,6 +745,18 @@ export default function App() {
       setSelectedInvoice(data)
       setView('invoice-details')
     }) 
+  }
+
+  function handleLedgerRowClick(row) {
+    const parsedId = parseInt(row.ref.replace(/[^0-9]/g, ''), 10);
+    if (row.type === 'Payment Received') {
+      const rec = receipts.find(r => r.id === parsedId);
+      if (rec) setLedgerPreview({ type: 'receipt', data: rec });
+    } else {
+      invoiceService.getInvoiceById(parsedId).then(data => {
+        setLedgerPreview({ type: 'invoice', data, isReturn: row.type === 'Sale Return' });
+      }).catch(err => console.error("Could not load preview:", err));
+    }
   }
 
   function handleEditSale(invoice) {
@@ -894,7 +939,6 @@ export default function App() {
     if (!receiptCustomer) return window.alert("Please select a customer.");
     if (!receiptAmount || Number(receiptAmount) <= 0) return window.alert("Please enter a valid amount.");
     
-    // UPDATED: Now passing receiptDiscount and receiptDate to the backend!
     receiptService.create(receiptCustomer.id, receiptAmount, receiptDiscount, receiptMethod, receiptDate, receiptRemarks)
       .then(() => {
         window.alert(`Receipt securely logged! Total Ledger Credit applied for ${receiptCustomer.name}.`);
@@ -981,7 +1025,6 @@ export default function App() {
     const { name, gstno, mobile, city, location, state } = customerForm
     if (!name?.trim()) return window.alert('Name is required')
     
-    // Security Fix: Safely preserve existing balance without showing it in the edit form!
     const existingBalance = isCustomerEditMode ? (customers.find(c => c.id === editingCustomerId)?.balance || 0) : 0;
 
     const action = isCustomerEditMode
@@ -1118,27 +1161,74 @@ export default function App() {
   };
 
   // =========================================
-  // --- Helper to Render JSON arrays in History Modal ---
+  // --- Helpers for Render Logic ---
   // =========================================
+  
+  const renderDateFilter = () => (
+    <div className="date-filter-group">
+      <select 
+        className="form-control mb-0 date-select-sm" 
+        value={dateFilterRange} 
+        onChange={e => setDateFilterRange(e.target.value)}
+      >
+        <option value="all">📅 All Time</option>
+        <option value="today">📅 Today</option>
+        <option value="week">📅 Last 7 Days</option>
+        <option value="month">📅 Last 30 Days</option>
+        <option value="year">📅 This Year</option>
+        <option value="custom">⚙️ Custom Range...</option>
+      </select>
+      
+      {dateFilterRange === 'custom' && (
+        <div className="custom-date-range">
+          <input type="date" className="form-control mb-0 date-input-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <span className="text-muted fs-sm fw-bold">to</span>
+          <input type="date" className="form-control mb-0 date-input-sm" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
+      )}
+    </div>
+  );
+
+  const parseItems = (json) => {
+    try { return JSON.parse(json) || []; } catch { return []; }
+  };
+
   const renderHistoryItems = (jsonString) => {
-    try {
-      if (!jsonString) return <tr><td colSpan="3" className="text-muted">No items</td></tr>;
-      const items = JSON.parse(jsonString);
-      return items.map((item, idx) => (
-        <tr key={idx}>
-          <td className="fw-bold">{item.name}</td>
-          <td>{item.qty}</td>
-          <td className="text-success">{formatMoney(item.price || item.purchasePrice)}</td>
-        </tr>
-      ));
-    } catch (e) {
-      return <tr><td colSpan="3" className="text-danger">Error reading items</td></tr>;
-    }
+    const items = parseItems(jsonString);
+    if (!items.length) return <tr><td colSpan="3" className="text-muted">No items</td></tr>;
+    
+    return items.map((item, idx) => (
+      <tr key={idx} className="bg-transparent">
+        <td className="fw-bold">{item.name}</td>
+        <td>{item.qty || item.quantity}</td>
+        <td className="text-success">{formatMoney(item.price || item.purchasePrice)}</td>
+      </tr>
+    ));
+  };
+
+  const renderHistorySummary = (itemsJson, finalTotal) => {
+    const items = parseItems(itemsJson);
+    const calcSubtotal = items.reduce((sum, i) => sum + ((i.price || i.purchasePrice || 0) * (i.qty || i.quantity || 0)), 0);
+    const totalQty = items.reduce((sum, i) => sum + (i.qty || i.quantity || 0), 0);
+    
+    return (
+      <div className="receipt-panel receipt-summary-box">
+        <div className="receipt-row receipt-three-col mb-0-5">
+          <span className="fw-bold text-muted">Total Items:</span>
+          <span className="text-right text-muted">{items.length} (Qty: {totalQty})</span>
+        </div>
+        <div className="receipt-row receipt-three-col mb-0-5">
+          <span className="fw-bold text-muted">Subtotal:</span>
+          <span className="text-right text-muted">{formatMoney(calcSubtotal)}</span>
+        </div>
+        <div className="receipt-total receipt-three-col border-top-light">
+          <span className="fw-bold">Final Total:</span>
+          <span className="text-right fw-bold text-success fs-lg">{formatMoney(finalTotal)}</span>
+        </div>
+      </div>
+    )
   }
 
-  // =========================================
-  // --- Control Render Elements ---
-  // =========================================
   function renderPagination(totalItems) {
     const totalPages = Math.ceil(totalItems / itemsPerPage) || 1
     return (
@@ -1205,7 +1295,7 @@ export default function App() {
           <button className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => setView('home')}>Home</button>
 
           <div className="nav-dropdown">
-            <button className={`nav-item ${['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history', 'drafts-list'].includes(view) ? 'active' : ''}`}>
+            <button className={`nav-item ${['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history', 'drafts-list', 'sale-edit-compare'].includes(view) ? 'active' : ''}`}>
               Sales ▼
             </button>
             <div className="nav-dropdown-content">
@@ -1217,12 +1307,12 @@ export default function App() {
           </div>
 
           <div className="nav-dropdown">
-            <button className={`nav-item ${['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history'].includes(view) ? 'active' : ''}`}>
+            <button className={`nav-item ${['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history', 'purchase-edit-compare'].includes(view) ? 'active' : ''}`}>
               Purchases ▼
             </button>
             <div className="nav-dropdown-content">
               <button className="nav-dropdown-item" onClick={() => setView('purchase-new')}>New Purchase</button>
-              <button className="nav-dropdown-item" onClick={() => setView('purchases-list')}>Purchase History</button>
+              <button className="nav-dropdown-item" onClick={() => setView('purchases-list')}>Purchase List</button>
               <button className="nav-dropdown-item" onClick={() => setView('purchase-edit-history')}>Purchase Edits</button>
             </div>
           </div>
@@ -1394,7 +1484,7 @@ export default function App() {
 
         {/* --- INTERFACE PATH TARGET: REPORTS MENU --- */}
         {view === 'reports' && (
-          <div className="card transparent-card">
+          <div className="card bg-transparent">
             <div className="reports-layout">
               <div className="card mb-0">
                 <div className="card-header"><h2 className="card-title">Customer Data</h2></div>
@@ -1445,7 +1535,7 @@ export default function App() {
         {view === 'ledgers' && (
           <div className="card">
             <div className="card-header header-actions">
-              <h2 className="card-title mb-0">Customer Ledgers (Outstanding Dues)</h2>
+              <h2 className="card-title mb-0">Customer Ledgers</h2>
               <input 
                 type="text" 
                 className="form-control header-search" 
@@ -1455,8 +1545,8 @@ export default function App() {
               />
             </div>
             
-            <div className="dashboard-stats-grid single-col" style={{ marginTop: 0, marginBottom: '1.5rem' }}>
-              <div className="card stat-card" style={{ borderTopColor: '#ef4444', marginBottom: 0 }}>
+            <div className="dashboard-stats-grid single-col ledger-stats-container">
+              <div className="card stat-card ledger-stats-card">
                 <h4>Total Outstanding Market Dues</h4>
                 <div className="text-danger fw-bold fs-xxl mt-auto">
                   {formatMoney(customers.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0))}
@@ -1475,7 +1565,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedCustomers.filter(c => c.balance > 0).length ? paginatedCustomers.filter(c => c.balance > 0).map(c => (
+                  {paginatedCustomers.map(c => (
                     <tr key={c.id} className="product-row available" onClick={() => {
                       setViewingCustomerStatement(c);
                       setView('ledger-statement');
@@ -1483,34 +1573,42 @@ export default function App() {
                       <td className="fw-bold cell-padded">{c.name}</td>
                       <td className="cell-padded">{c.mobile || 'N/A'}</td>
                       <td className="cell-padded">{c.location || c.city || 'N/A'}</td>
-                      <td className="fw-bold cell-padded text-danger">
-                        {formatMoney(c.balance)} (To Receive)
+                      <td className={`fw-bold cell-padded ${c.balance > 0 ? 'text-danger' : (c.balance < 0 ? 'text-success' : 'text-muted')}`}>
+                        {formatMoney(Math.abs(c.balance))} {c.balance > 0 ? '(Due)' : (c.balance < 0 ? '(Advance)' : '')}
                       </td>
                     </tr>
-                  )) : (
-                    <tr><td colSpan={4} className="empty-state">No customers with outstanding balances found.</td></tr>
+                  ))}
+                  {paginatedCustomers.length === 0 && (
+                    <tr><td colSpan={4} className="empty-state">No customers found.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            {renderPagination(filteredCustomers.filter(c => c.balance > 0).length)}
+            {renderPagination(filteredCustomers.length)}
           </div>
         )}
 
-        {/* 🚀 NEW FULL PAGE: STRICT LEDGER CUSTOMER STATEMENT OF ACCOUNT */}
+        {/* 🚀 NEW FULL PAGE: SIDE-BY-SIDE SPLIT LEDGER STATEMENT */}
         {view === 'ledger-statement' && viewingCustomerStatement && (
-          <div className="card transparent-card">
-            <div className="card-header header-actions bg-white" style={{ padding: '2rem', borderRadius: '8px', borderBottom: 'none' }}>
-              <h2 className="card-title">Statement of Account</h2>
-              <button 
-                className="btn btn-secondary action-buttons-right" 
-                onClick={() => { setViewingCustomerStatement(null); setView('ledgers'); }}
-              >
-                Back to Ledgers
-              </button>
+          <div className="card">
+            <div className="card-header header-actions header-actions-wrap">
+              <h2 className="card-title mb-0">Statement of Account</h2>
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search ref, method..." 
+                  value={ledgerSearchQuery} 
+                  onChange={e => setLedgerSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+                <button className="btn btn-secondary" onClick={() => { setViewingCustomerStatement(null); setLedgerPreview(null); setView('ledgers'); }}>
+                  Back to Ledgers
+                </button>
+              </div>
             </div>
             
-            <div className="invoice-summary-grid bg-white" style={{ padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            <div className="invoice-summary-grid mt-1 invoice-summary-bg">
               <div className="info-block">
                 <span className="info-label">Customer Name</span>
                 <strong className="info-value text-primary fs-xxl">{viewingCustomerStatement.name}</strong>
@@ -1527,135 +1625,175 @@ export default function App() {
               </div>
             </div>
 
-            {/* MAIN DOUBLE ENTRY LEDGER TABLE */}
-            <div className="card mb-0" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-              <h3 className="card-title mb-1-5">Complete Financial Ledger</h3>
-              <div className="ledger-table-wrapper">
-                <table className="ledger-strict-table">
-                  <thead>
-                    <tr>
-                      <th style={{width: '12%'}}>Date</th>
-                      <th style={{width: '18%'}}>Particulars</th>
-                      <th style={{width: '15%'}}>Ref No.</th>
-                      <th style={{width: '10%'}}>Method</th>
-                      <th className="right-align" style={{width: '15%'}}>Bill Amount (+)</th>
-                      <th className="right-align" style={{width: '15%'}}>Paid Amount (-)</th>
-                      <th className="right-align" style={{width: '15%'}}>Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customerStatementData.length ? customerStatementData.map((row, idx) => (
-                      <tr key={idx} className={row.isCashTx ? 'ledger-row-neutral' : ''}>
-                        <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
-                        <td>
-                          <span className={`badge ${row.type === 'Payment Received' ? 'btn-success text-white' : (row.type === 'Sale Return' ? 'btn-danger text-white' : 'bg-slate-200')}`}>
-                            {row.type}
-                          </span>
-                        </td>
-                        <td className="font-monospace text-muted">{row.ref}</td>
-                        <td>{row.method}</td>
-                        
-                        <td className="right-align fw-bold" style={{color: row.debit > 0 ? '#ef4444' : '#94a3b8'}}>
-                          {row.debit > 0 ? formatMoney(row.debit) : '-'}
-                        </td>
-                        
-                        <td className="right-align fw-bold" style={{color: row.credit > 0 ? '#10b981' : '#94a3b8'}}>
-                          {row.credit > 0 ? formatMoney(row.credit) : '-'}
-                        </td>
-                        
-                        <td className="right-align fw-bold fs-lg">
-                          <span style={{ color: '#0f172a' }}>{formatMoney(Math.abs(row.runningBalance))}</span>
-                          <span className={row.runningBalance > 0 ? 'text-dr' : (row.runningBalance < 0 ? 'text-cr' : '')}>
-                            {row.runningBalance > 0 ? ' Dr' : (row.runningBalance < 0 ? ' Cr' : '')}
-                          </span>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr><td colSpan={7} className="empty-state">No transaction history found for this customer.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-1-5">
-                <div className="text-muted fs-sm">* Cash transactions show matching Bill & Paid amounts on the same row because they do not change the total outstanding ledger balance.</div>
-              </div>
-            </div>
-
-            {/* SPLIT VIEW SECTIONS */}
-            <div className="reports-layout">
-              {/* TABLE 1: SALES & BILLING HISTORY */}
-              <div className="card mb-0" style={{ padding: '1.5rem' }}>
-                <h3 className="card-title mb-1-5">Customer Purchases (Bills)</h3>
+            {/* Side-by-Side Flex Layout */}
+            <div className="ledger-split-layout">
+              
+              {/* LEFT SIDE: Ledger Table */}
+              <div className="ledger-table-container">
                 <div className="ledger-table-wrapper">
-                  <table className="ledger-strict-table" style={{ minWidth: '100%' }}>
+                  <table className="ledger-strict-table w-100-min">
                     <thead>
                       <tr>
-                        <th style={{width: '20%'}}>Date</th>
-                        <th style={{width: '30%'}}>Type</th>
-                        <th style={{width: '25%'}}>Ref No.</th>
-                        <th className="right-align" style={{width: '25%'}}>Amount</th>
+                        <th className="col-12">Date</th>
+                        <th className="col-18">Particulars</th>
+                        <th className="col-15">Ref No.</th>
+                        <th className="col-10">Method</th>
+                        <th className="right-align col-15">Bill Amount (+)</th>
+                        <th className="right-align col-15">Paid Amount (-)</th>
+                        <th className="right-align col-15">Balance</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {customerSalesData.length ? customerSalesData.map((row, idx) => (
-                        <tr key={idx}>
-                          <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
-                          <td>
-                            <span className={`badge ${row.isReturn ? 'btn-danger text-white' : 'bg-slate-200'}`}>
+                      {filteredCustomerStatementData.length ? filteredCustomerStatementData.map((row, idx) => (
+                        <tr 
+                          key={idx} 
+                          className={`product-row available ${row.isCashTx ? 'ledger-row-neutral' : ''}`} 
+                          onClick={() => handleLedgerRowClick(row)}
+                          title="Click to view details"
+                        >
+                          <td className="fw-bold cell-padded">{row.sortDate.toLocaleDateString('en-GB')}</td>
+                          <td className="cell-padded">
+                            <span className={`badge ${row.type === 'Payment Received' ? 'btn-success text-white' : (row.type === 'Sale Return' ? 'btn-danger text-white' : 'bg-slate-200')}`}>
                               {row.type}
                             </span>
                           </td>
-                          <td className="font-monospace text-muted">{row.ref}</td>
-                          <td className={`right-align fw-bold ${row.isReturn ? 'text-success' : 'text-danger'}`}>
-                            {formatMoney(row.amount)}
+                          <td className="font-monospace text-muted cell-padded">{row.ref}</td>
+                          <td className="cell-padded">{row.method}</td>
+                          
+                          <td className="right-align fw-bold cell-padded" style={{color: row.debit > 0 ? '#ef4444' : '#94a3b8'}}>
+                            {row.debit > 0 ? formatMoney(row.debit) : '-'}
+                          </td>
+                          
+                          <td className="right-align fw-bold cell-padded" style={{color: row.credit > 0 ? '#10b981' : '#94a3b8'}}>
+                            {row.credit > 0 ? formatMoney(row.credit) : '-'}
+                          </td>
+                          
+                          <td className="right-align fw-bold fs-lg cell-padded">
+                            <span className="text-dark-blue">{formatMoney(Math.abs(row.runningBalance))}</span>
+                            <span className={row.runningBalance > 0 ? 'text-dr' : (row.runningBalance < 0 ? 'text-cr' : '')}>
+                              {row.runningBalance > 0 ? ' Dr' : (row.runningBalance < 0 ? ' Cr' : '')}
+                            </span>
                           </td>
                         </tr>
                       )) : (
-                        <tr><td colSpan={4} className="empty-state">No sales history found.</td></tr>
+                        <tr><td colSpan={7} className="empty-state">No transaction history found for this date range/search.</td></tr>
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="mt-1-5">
+                  <div className="text-muted fs-sm">* Cash transactions show matching Bill & Paid amounts on the same row because they do not change the total outstanding ledger balance. Click any row to preview the full document.</div>
                 </div>
               </div>
 
-              {/* TABLE 2: PAYMENTS & RECEIPTS HISTORY */}
-              <div className="card mb-0" style={{ padding: '1.5rem' }}>
-                <h3 className="card-title mb-1-5">Customer Payments (Receipts)</h3>
-                <div className="ledger-table-wrapper">
-                  <table className="ledger-strict-table" style={{ minWidth: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th style={{width: '20%'}}>Date</th>
-                        <th style={{width: '25%'}}>Method</th>
-                        <th style={{width: '25%'}}>Ref No.</th>
-                        <th className="right-align" style={{width: '30%'}}>Amount Paid</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customerReceiptsData.length ? customerReceiptsData.map((row, idx) => (
-                        <tr key={idx}>
-                          <td className="fw-bold">{row.sortDate.toLocaleDateString('en-GB')}</td>
-                          <td>{row.method}</td>
-                          <td className="font-monospace text-muted">{row.ref}</td>
-                          <td className="right-align fw-bold text-success">
-                            {formatMoney(row.amount)}
-                            {row.discount > 0 && <div className="fs-sm text-muted text-dr">Less: {formatMoney(row.discount)}</div>}
-                          </td>
-                        </tr>
-                      )) : (
-                        <tr><td colSpan={4} className="empty-state">No payment history found.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+              {/* RIGHT SIDE: Instant Sticky Document Preview */}
+              {ledgerPreview && (
+                <div className="ledger-preview-sidebar card">
+                  <div className="card-header header-actions border-none p-0 mb-1">
+                    <h3 className="modal-header-title text-slate mb-0 fs-xl">
+                      {ledgerPreview.type === 'receipt' ? 'Payment Receipt' : 'Bill Document'}
+                    </h3>
+                    <button onClick={() => setLedgerPreview(null)} className="btn btn-secondary btn-sm">Close</button>
+                  </div>
+                  
+                  {ledgerPreview.type === 'receipt' ? (
+                    <div className="receipt-panel bg-white receipt-preview-panel">
+                      <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
+                        <div className="info-block">
+                          <span className="info-label">Receipt ID</span>
+                          <strong className="info-value">{formatReceiptId(ledgerPreview.data.id)}</strong>
+                        </div>
+                        <div className="info-block mt-1">
+                          <span className="info-label">Date</span>
+                          <strong className="info-value">{new Date(ledgerPreview.data.receiptDate).toLocaleDateString('en-GB')}</strong>
+                        </div>
+                        <div className="info-block mt-1">
+                          <span className="info-label">Amount Paid</span>
+                          <strong className="info-value fs-xxl text-success">{formatMoney(ledgerPreview.data.amount)}</strong>
+                        </div>
+                        {ledgerPreview.data.discountAmount > 0 && (
+                          <div className="info-block mt-1">
+                            <span className="info-label">Less (Discount)</span>
+                            <strong className="info-value fs-lg text-danger">- {formatMoney(ledgerPreview.data.discountAmount)}</strong>
+                          </div>
+                        )}
+                        <div className="info-block mt-1">
+                          <span className="info-label">Payment Mode</span>
+                          <strong className="info-value text-slate">{ledgerPreview.data.paymentMode}</strong>
+                        </div>
+                        <div className="info-block mt-1">
+                          <span className="info-label">Remarks</span>
+                          <strong className="info-value text-slate">{ledgerPreview.data.remarks || 'N/A'}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="invoice-summary-grid single-col-grid mb-1 p-1 mb-2-bg">
+                        <div className="info-block">
+                          <span className="info-label">Bill ID</span>
+                          <strong className="info-value">{formatInvoiceId(ledgerPreview.data.id)}</strong>
+                        </div>
+                        <div className="info-block mt-1">
+                          <span className="info-label">Date</span>
+                          <strong className="info-value">{new Date(ledgerPreview.data.orderDate || ledgerPreview.data.purchaseDate).toLocaleDateString('en-GB')}</strong>
+                        </div>
+                      </div>
+                      
+                      <h4 className="section-title-spacing fs-sm text-muted">Items List</h4>
+                      <div className="table-responsive preview-table-scroll-lg">
+                        <table className="data-table mb-0 border-none">
+                          <thead className="sticky-th-light">
+                            <tr><th>Product</th><th>Qty</th><th className="text-right">Price</th></tr>
+                          </thead>
+                          <tbody>
+                            {ledgerPreview.data.items?.map((item, idx) => (
+                              <tr key={idx}>
+                                <td>{item.product?.name || 'Unknown'}</td>
+                                <td className="fw-bold">{item.quantity}</td>
+                                <td className="text-right">{formatMoney(item.price || item.purchasePrice)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* NEW: Bill Summary injected inside the Ledger Sidebar Preview */}
+                      <div className="receipt-panel receipt-summary-box">
+                        <div className="receipt-row receipt-three-col mb-0-5">
+                          <span className="fw-bold text-muted">Subtotal:</span>
+                          <span className="text-right text-muted">{formatMoney(ledgerPreview.data.grossTotal || ledgerPreview.data.totalAmount)}</span>
+                        </div>
+                        {ledgerPreview.data.discountPercent > 0 && (
+                          <div className="receipt-row receipt-three-col mb-0-5">
+                            <span className="fw-bold text-muted">Discount ({ledgerPreview.data.discountPercent}%):</span>
+                            <span className="text-right text-danger">-{formatMoney((ledgerPreview.data.grossTotal || 0) * (ledgerPreview.data.discountPercent / 100))}</span>
+                          </div>
+                        )}
+                        {(ledgerPreview.data.cgst > 0 || ledgerPreview.data.sgst > 0) && (
+                          <div className="receipt-row receipt-three-col mb-0-5">
+                            <span className="fw-bold text-muted">Tax (CGST+SGST):</span>
+                            <span className="text-right text-muted">+{formatMoney((ledgerPreview.data.cgst || 0) + (ledgerPreview.data.sgst || 0))}</span>
+                          </div>
+                        )}
+                        <div className="receipt-total receipt-three-col border-top-light">
+                          <span className="fw-bold">Final Total:</span>
+                          <span className={`text-right fw-bold fs-lg ${ledgerPreview.isReturn ? 'text-danger' : 'text-success'}`}>
+                            {formatMoney(ledgerPreview.data.finalTotal || ledgerPreview.data.totalAmount)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
         {/* --- INTERFACE PATH TARGET: RECEIPTS GENERATOR --- */}
         {view === 'receipts' && (
-          <div className="card transparent-card">
+          <div className="card bg-transparent">
             <div className="reports-layout">
               {/* Receipt Form Column */}
               <div className="card mb-0">
@@ -1705,7 +1843,7 @@ export default function App() {
                   />
                 </div>
 
-                <div className="sales-control-row p-0 border-none m-0" style={{ gap: '1rem', background: 'transparent' }}>
+                <div className="sales-control-row sales-control-row-transparent">
                   <div className="form-group w-100">
                     <label className="form-label">Amount Received (₹):</label>
                     <input
@@ -1715,7 +1853,6 @@ export default function App() {
                     />
                   </div>
                   
-                  {/* NEW DISCOUNT LESS FIELD */}
                   <div className="form-group w-100">
                     <label className="form-label">Discount / Less (₹):</label>
                     <input
@@ -1748,17 +1885,17 @@ export default function App() {
               </div>
 
               {/* Live Preview Column */}
-              <div className="card mb-0" style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+              <div className="card mb-0 flat-dashed-card">
                 <div className="card-header border-none pb-0">
                   <h3 className="text-center w-100 text-slate mb-0">Live Receipt Preview</h3>
                 </div>
-                <div className="receipt-panel" style={{ backgroundColor: 'white', marginTop: '1.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                <div className="receipt-panel shadow-panel">
                   <div className="text-center border-bottom-padded mb-1-5">
                     <h2 className="mb-0 text-slate">PAYMENT RECEIPT</h2>
                     <p className="text-muted mt-1 mb-0">{new Date(receiptDate).toLocaleDateString('en-GB')}</p>
                   </div>
                   
-                  <div className="receipt-row receipt-three-col single-col-grid" style={{ gridTemplateColumns: '1fr', borderBottom: 'none' }}>
+                  <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
                     <div className="info-block">
                       <span className="info-label">Received From</span>
                       <strong className="info-value fs-xl text-primary">{receiptCustomer ? receiptCustomer.name : '__________________'}</strong>
@@ -1802,15 +1939,18 @@ export default function App() {
         {/* --- INTERFACE PATH TARGET: RECEIPTS MASTER LIST --- */}
         {view === 'receipts-list' && (
           <div className="card">
-            <div className="card-header header-actions">
+            <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Master Receipts List</h2>
-              <input 
-                type="text" 
-                className="form-control header-search" 
-                placeholder="Search Customer or ID..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
-              />
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search Customer or ID..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             
             <div className="table-responsive">
@@ -1827,7 +1967,12 @@ export default function App() {
                 </thead>
                 <tbody>
                   {paginatedReceipts.length ? paginatedReceipts.map(rec => (
-                    <tr key={rec.id} className="product-row available">
+                    <tr 
+                      key={rec.id} 
+                      className="product-row available" 
+                      onClick={() => setViewingReceipt(rec)} 
+                      title="Click to view receipt document"
+                    >
                       <td className="fw-bold cell-padded">{formatReceiptId(rec.id)}</td>
                       <td className="cell-padded">{new Date(rec.receiptDate).toLocaleDateString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{rec.customerName}</td>
@@ -1842,7 +1987,7 @@ export default function App() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={6} className="empty-state">No receipts found.</td></tr>
+                    <tr><td colSpan={6} className="empty-state">No receipts found for this date range.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2003,9 +2148,18 @@ export default function App() {
         {/* --- INTERFACE PATH TARGET: PURCHASES MASTER LIST --- */}
         {view === 'purchases-list' && (
           <div className="card">
-            <div className="card-header header-actions">
-              <h2 className="card-title mb-0">Purchase History</h2>
-              <input type="text" className="form-control header-search" placeholder="Search by Seller or ID..." value={purchaseSearchQuery} onChange={e => setPurchaseSearchQuery(e.target.value)} />
+            <div className="card-header header-actions header-actions-wrap">
+              <h2 className="card-title mb-0">Purchase List</h2>
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search by Seller or ID..." 
+                  value={purchaseSearchQuery} 
+                  onChange={e => setPurchaseSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             <div className="table-responsive">
               <table className="block-table data-table">
@@ -2019,12 +2173,12 @@ export default function App() {
                       <td className="cell-padded">{invoice.sellerName}</td>
                       <td className="cell-padded">{invoice.customInvoiceId || 'N/A'}</td>
                       <td className="price-text fw-bold cell-padded">{formatMoney(invoice.finalTotal)}</td>
-                      <td className="cell-padded">{new Date(invoice.purchaseDate).toLocaleDateString()}</td>
+                      <td className="cell-padded">{new Date(invoice.purchaseDate).toLocaleDateString('en-GB')}</td>
                       <td className="cell-padded">
                         <button className="btn btn-warning" onClick={(e) => { e.stopPropagation(); handleEditPurchase(invoice); }}>Edit</button>
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={6} className="empty-state">No purchases found.</td></tr>}
+                  )) : <tr><td colSpan={6} className="empty-state">No purchases found for this date range.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -2051,7 +2205,7 @@ export default function App() {
               </div>
               <div className="info-block">
                 <span className="info-label">Purchase Date</span>
-                <strong className="info-value">{new Date(selectedPurchaseInvoice.purchaseDate).toLocaleDateString()}</strong>
+                <strong className="info-value">{new Date(selectedPurchaseInvoice.purchaseDate).toLocaleDateString('en-GB')}</strong>
               </div>
             </div>
             
@@ -2139,7 +2293,7 @@ export default function App() {
             </div>
 
             <div className="tab-content-panel">
-              <div className="sales-control-panel" style={{ boxShadow: 'none', border: '1px solid #e2e8f0', marginTop: 0 }}>
+              <div className="sales-control-panel flat-panel">
                 <div className="cancel-btn-wrapper">
                   <button className="btn btn-warning btn-sm" onClick={saveToDrafts}>
                     ⤓ Save to Drafts
@@ -2179,7 +2333,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="card" style={{ boxShadow: 'none', border: '1px solid #e2e8f0' }}>
+              <div className="card flat-panel-card">
                 <div className="card-header header-actions">
                   <h2 className="card-title">
                     {activeTab.editingInvoiceId ? `Editing Sale ${formatInvoiceId(activeTab.editingInvoiceId)}` : 'Cart'} - {activeTab.activeCustomer ? activeTab.activeCustomer.name : <span className="text-danger">No Customer Selected</span>}
@@ -2374,15 +2528,18 @@ export default function App() {
         {/* --- INTERFACE PATH TARGET: OUTBOUND REVENUE HISTORY --- */}
         {view === 'invoices' && (
           <div className="card">
-            <div className="card-header header-actions">
+            <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Sales List</h2>
-              <input 
-                type="text" 
-                className="form-control header-search" 
-                placeholder="Search by Bill ID or Customer..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
-              />
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search by Bill ID or Customer..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             
             <div className="table-responsive">
@@ -2445,7 +2602,7 @@ export default function App() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={6} className="empty-state">No sales found.</td></tr>
+                    <tr><td colSpan={6} className="empty-state">No sales found for this date range.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2457,15 +2614,18 @@ export default function App() {
         {/* --- INTERFACE PATH TARGET: EDIT HISTORY LOGS --- */}
         {view === 'edit-history' && (
           <div className="card">
-            <div className="card-header header-actions">
+            <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Sales Edit History</h2>
-              <input 
-                type="text" 
-                className="form-control header-search" 
-                placeholder="Search customer or ID..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
-              />
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search customer or ID..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             
             <div className="table-responsive">
@@ -2481,20 +2641,23 @@ export default function App() {
                 <tbody>
                   {paginatedInvoiceHistory.length ? paginatedInvoiceHistory.map(log => (
                     <tr key={log.id} className="product-row available">
-                      <td className="cell-padded">{new Date(log.editDate).toLocaleString('en-GB')}</td>
+                      <td className="cell-padded">{new Date(log.editDate).toLocaleDateString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{formatInvoiceId(log.originalInvoiceId)}</td>
                       <td className="cell-padded">{log.customerName}</td>
                       <td className="cell-padded">
                         <button 
                           className="btn btn-secondary" 
-                          onClick={() => setViewingHistoryLog(log)}
+                          onClick={() => {
+                            setHistoryCompareData(log);
+                            setView('sale-edit-compare');
+                          }}
                         >
                           View Comparison
                         </button>
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={4} className="empty-state">No edit history found.</td></tr>
+                    <tr><td colSpan={4} className="empty-state">No edit history found for this date range.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2503,18 +2666,80 @@ export default function App() {
           </div>
         )}
 
+        {/* 🚀 NEW FULL PAGE: SALES EDIT COMPARISON */}
+        {view === 'sale-edit-compare' && historyCompareData && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title">
+                Compare Edits: {formatInvoiceId(historyCompareData.originalInvoiceId)}
+              </h2>
+              <button 
+                className="btn btn-secondary action-buttons-right" 
+                onClick={() => { setHistoryCompareData(null); setView('edit-history'); }}
+              >
+                Back to Edit History
+              </button>
+            </div>
+            <div className="mb-2-bg">
+              <span className="fw-bold text-slate">Customer: </span> {historyCompareData.customerName} &nbsp;|&nbsp;
+              <span className="fw-bold text-slate"> Edited On: </span> {new Date(historyCompareData.editDate).toLocaleString('en-GB')}
+            </div>
+
+            <div className="comparison-grid">
+              {/* OLD SNAPSHOT (TINTED RED) */}
+              <div className="snapshot-old-wrapper">
+                <h3 className="snapshot-title-old">
+                  Old Bill Snapshot
+                </h3>
+                <div className="table-res-old">
+                  <table className="data-table comparison-table mb-0 border-none bg-transparent">
+                    <thead className="sticky-th-light-no-z">
+                      <tr><th className="th-old th-old-tinted">Product</th><th className="th-old th-old-tinted">Qty</th><th className="th-old th-old-tinted">Price</th></tr>
+                    </thead>
+                    <tbody>
+                      {renderHistoryItems(historyCompareData.oldItemsJson)}
+                    </tbody>
+                  </table>
+                </div>
+                {renderHistorySummary(historyCompareData.oldItemsJson, historyCompareData.oldFinalTotal)}
+              </div>
+
+              {/* NEW SNAPSHOT (TINTED GREEN) */}
+              <div className="snapshot-new-wrapper">
+                <h3 className="snapshot-title-new">
+                  New Bill Snapshot
+                </h3>
+                <div className="table-res-new">
+                  <table className="data-table comparison-table mb-0 border-none bg-transparent">
+                    <thead className="sticky-th-light-no-z">
+                      <tr><th className="th-new th-new-tinted">Product</th><th className="th-new th-new-tinted">Qty</th><th className="th-new th-new-tinted">Price</th></tr>
+                    </thead>
+                    <tbody>
+                      {renderHistoryItems(historyCompareData.newItemsJson)}
+                    </tbody>
+                  </table>
+                </div>
+                {renderHistorySummary(historyCompareData.newItemsJson, historyCompareData.newFinalTotal)}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* --- INTERFACE PATH TARGET: PURCHASE EDIT HISTORY LOGS --- */}
         {view === 'purchase-edit-history' && (
           <div className="card">
-            <div className="card-header header-actions">
+            <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Purchase Edit History</h2>
-              <input 
-                type="text" 
-                className="form-control header-search" 
-                placeholder="Search seller or ID..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
-              />
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search seller or ID..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             
             <div className="table-responsive">
@@ -2530,20 +2755,23 @@ export default function App() {
                 <tbody>
                   {paginatedPurchaseInvoiceHistory.length ? paginatedPurchaseInvoiceHistory.map(log => (
                     <tr key={log.id} className="product-row available">
-                      <td className="cell-padded">{new Date(log.editDate).toLocaleString('en-GB')}</td>
+                      <td className="cell-padded">{new Date(log.editDate).toLocaleDateString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{formatPurchaseInvoiceId(log.originalPurchaseInvoiceId)}</td>
                       <td className="cell-padded">{log.sellerName}</td>
                       <td className="cell-padded">
                         <button 
                           className="btn btn-secondary" 
-                          onClick={() => setViewingPurchaseHistoryLog(log)}
+                          onClick={() => {
+                            setHistoryCompareData(log);
+                            setView('purchase-edit-compare');
+                          }}
                         >
                           View Comparison
                         </button>
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={4} className="empty-state">No purchase edit history found.</td></tr>
+                    <tr><td colSpan={4} className="empty-state">No purchase edit history found for this date range.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2552,18 +2780,80 @@ export default function App() {
           </div>
         )}
 
+        {/* 🚀 NEW FULL PAGE: PURCHASE EDIT COMPARISON */}
+        {view === 'purchase-edit-compare' && historyCompareData && (
+          <div className="card">
+            <div className="card-header header-actions">
+              <h2 className="card-title">
+                Compare Edits: {formatPurchaseInvoiceId(historyCompareData.originalPurchaseInvoiceId)}
+              </h2>
+              <button 
+                className="btn btn-secondary action-buttons-right" 
+                onClick={() => { setHistoryCompareData(null); setView('purchase-edit-history'); }}
+              >
+                Back to Edit History
+              </button>
+            </div>
+            <div className="mb-2-bg">
+              <span className="fw-bold text-slate">Seller: </span> {historyCompareData.sellerName} &nbsp;|&nbsp;
+              <span className="fw-bold text-slate"> Edited On: </span> {new Date(historyCompareData.editDate).toLocaleString('en-GB')}
+            </div>
+
+            <div className="comparison-grid">
+              {/* OLD SNAPSHOT (TINTED RED) */}
+              <div className="snapshot-old-wrapper">
+                <h3 className="snapshot-title-old">
+                  Old Purchase Snapshot
+                </h3>
+                <div className="table-res-old">
+                  <table className="data-table comparison-table mb-0 border-none bg-transparent">
+                    <thead className="sticky-th-light-no-z">
+                      <tr><th className="th-old th-old-tinted">Product</th><th className="th-old th-old-tinted">Qty</th><th className="th-old th-old-tinted">Price</th></tr>
+                    </thead>
+                    <tbody>
+                      {renderHistoryItems(historyCompareData.oldItemsJson)}
+                    </tbody>
+                  </table>
+                </div>
+                {renderHistorySummary(historyCompareData.oldItemsJson, historyCompareData.oldFinalTotal)}
+              </div>
+
+              {/* NEW SNAPSHOT (TINTED GREEN) */}
+              <div className="snapshot-new-wrapper">
+                <h3 className="snapshot-title-new">
+                  New Purchase Snapshot
+                </h3>
+                <div className="table-res-new">
+                  <table className="data-table comparison-table mb-0 border-none bg-transparent">
+                    <thead className="sticky-th-light-no-z">
+                      <tr><th className="th-new th-new-tinted">Product</th><th className="th-new th-new-tinted">Qty</th><th className="th-new th-new-tinted">Price</th></tr>
+                    </thead>
+                    <tbody>
+                      {renderHistoryItems(historyCompareData.newItemsJson)}
+                    </tbody>
+                  </table>
+                </div>
+                {renderHistorySummary(historyCompareData.newItemsJson, historyCompareData.newFinalTotal)}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* --- INTERFACE PATH TARGET: INVENTORY HISTORY LOGS --- */}
         {view === 'inventory-history' && (
           <div className="card">
-            <div className="card-header header-actions">
+            <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Inventory Movement History</h2>
-              <input 
-                type="text" 
-                className="form-control header-search" 
-                placeholder="Search products or actions..." 
-                value={searchQuery} 
-                onChange={e => setSearchQuery(e.target.value)} 
-              />
+              <div className="header-filters-group">
+                <input 
+                  type="text" 
+                  className="form-control mb-0 search-input-md" 
+                  placeholder="Search products or actions..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                />
+                {renderDateFilter()}
+              </div>
             </div>
             
             <div className="table-responsive">
@@ -2581,7 +2871,7 @@ export default function App() {
                 <tbody>
                   {paginatedInventoryHistory.length ? paginatedInventoryHistory.map(log => (
                     <tr key={log.id} className="product-row available">
-                      <td className="cell-padded">{new Date(log.timestamp).toLocaleString('en-GB')}</td>
+                      <td className="cell-padded">{new Date(log.timestamp).toLocaleDateString('en-GB')}</td>
                       <td className="fw-bold cell-padded">{log.productName}</td>
                       <td className="cell-padded"><span className="badge">{log.actionType}</span></td>
                       <td className="text-muted cell-padded">{log.description}</td>
@@ -2591,7 +2881,7 @@ export default function App() {
                       <td className="fw-bold cell-padded">{log.finalStock}</td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={6} className="empty-state">No inventory history found.</td></tr>
+                    <tr><td colSpan={6} className="empty-state">No inventory history found for this date range.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -3147,145 +3437,49 @@ export default function App() {
           --- SYSTEM INTERACTIVE OVERLAYS ---
           ========================================= */}
 
-      {/* Detailed Edit History Comparison Modal */}
-      {viewingHistoryLog && (
-        <div className="modal-overlay">
-          <div className="modal-content modal-large-auto">
-            <h3 className="modal-header-title">Edit History Comparison</h3>
-            <p className="text-dark-muted mb-0">
-              Bill: <strong>{formatInvoiceId(viewingHistoryLog.originalInvoiceId)}</strong> | 
-              Edited On: {new Date(viewingHistoryLog.editDate).toLocaleString('en-GB')}
-            </p>
-
-            <div className="comparison-grid">
-              
-              {/* OLD SNAPSHOT */}
-              <div className="receipt-panel snapshot-old">
-                <h4 className="snapshot-title-old">
-                  Old Bill Snapshot
-                </h4>
-                <div className="comparison-total-row">
-                  <span className="fw-bold">Total Amount:</span>
-                  <span className="fw-bold text-danger">{formatMoney(viewingHistoryLog.oldFinalTotal)}</span>
+      {/* Standalone Receipt Preview Modal (From Receipts List) */}
+      {viewingReceipt && (
+        <div className="modal-overlay modal-overlay-top">
+          <div className="modal-content modal-small">
+            <h3 className="modal-header-title text-slate">Payment Receipt</h3>
+            
+            <div className="receipt-panel bg-white receipt-preview-panel">
+              <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
+                <div className="info-block">
+                  <span className="info-label">Receipt ID</span>
+                  <strong className="info-value">{formatReceiptId(viewingReceipt.id)}</strong>
                 </div>
-                <table className="data-table comparison-table">
-                  <thead>
-                    <tr>
-                      <th className="th-old">Product</th>
-                      <th className="th-old">Qty</th>
-                      <th className="th-old">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {renderHistoryItems(viewingHistoryLog.oldItemsJson)}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* NEW SNAPSHOT */}
-              <div className="receipt-panel snapshot-new">
-                <h4 className="snapshot-title-new">
-                  New Bill Snapshot
-                </h4>
-                <div className="comparison-total-row">
-                  <span className="fw-bold">Total Amount:</span>
-                  <span className="fw-bold text-success">{formatMoney(viewingHistoryLog.newFinalTotal)}</span>
+                <div className="info-block mt-1">
+                  <span className="info-label">Date</span>
+                  <strong className="info-value">{new Date(viewingReceipt.receiptDate).toLocaleDateString('en-GB')}</strong>
                 </div>
-                <table className="data-table comparison-table">
-                  <thead>
-                    <tr>
-                      <th className="th-new">Product</th>
-                      <th className="th-new">Qty</th>
-                      <th className="th-new">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {renderHistoryItems(viewingHistoryLog.newItemsJson)}
-                  </tbody>
-                </table>
+                <div className="info-block mt-1">
+                  <span className="info-label">Customer Name</span>
+                  <strong className="info-value">{viewingReceipt.customerName}</strong>
+                </div>
+                <div className="info-block mt-1">
+                  <span className="info-label">Amount Paid</span>
+                  <strong className="info-value fs-xxl text-success">{formatMoney(viewingReceipt.amount)}</strong>
+                </div>
+                {viewingReceipt.discountAmount > 0 && (
+                  <div className="info-block mt-1">
+                    <span className="info-label">Less (Discount)</span>
+                    <strong className="info-value fs-lg text-danger">- {formatMoney(viewingReceipt.discountAmount)}</strong>
+                  </div>
+                )}
+                <div className="info-block mt-1">
+                  <span className="info-label">Payment Mode</span>
+                  <strong className="info-value text-slate">{viewingReceipt.paymentMode}</strong>
+                </div>
+                <div className="info-block mt-1">
+                  <span className="info-label">Remarks</span>
+                  <strong className="info-value text-slate">{viewingReceipt.remarks || 'N/A'}</strong>
+                </div>
               </div>
-
             </div>
 
-            <div className="modal-actions center-actions mt-2">
-              <button 
-                onClick={() => setViewingHistoryLog(null)} 
-                className="btn btn-secondary w-100"
-              >
-                Close Comparison
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detailed PURCHASE Edit History Comparison Modal */}
-      {viewingPurchaseHistoryLog && (
-        <div className="modal-overlay">
-          <div className="modal-content modal-large-auto">
-            <h3 className="modal-header-title">Purchase Edit History Comparison</h3>
-            <p className="text-dark-muted mb-0">
-              Purchase ID: <strong>{formatPurchaseInvoiceId(viewingPurchaseHistoryLog.originalPurchaseInvoiceId)}</strong> | 
-              Edited On: {new Date(viewingPurchaseHistoryLog.editDate).toLocaleString('en-GB')}
-            </p>
-
-            <div className="comparison-grid">
-              
-              {/* OLD SNAPSHOT */}
-              <div className="receipt-panel snapshot-old">
-                <h4 className="snapshot-title-old">
-                  Old Purchase Snapshot
-                </h4>
-                <div className="comparison-total-row">
-                  <span className="fw-bold">Total Amount:</span>
-                  <span className="fw-bold text-danger">{formatMoney(viewingPurchaseHistoryLog.oldFinalTotal)}</span>
-                </div>
-                <table className="data-table comparison-table">
-                  <thead>
-                    <tr>
-                      <th className="th-old">Product</th>
-                      <th className="th-old">Qty</th>
-                      <th className="th-old">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {renderHistoryItems(viewingPurchaseHistoryLog.oldItemsJson)}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* NEW SNAPSHOT */}
-              <div className="receipt-panel snapshot-new">
-                <h4 className="snapshot-title-new">
-                  New Purchase Snapshot
-                </h4>
-                <div className="comparison-total-row">
-                  <span className="fw-bold">Total Amount:</span>
-                  <span className="fw-bold text-success">{formatMoney(viewingPurchaseHistoryLog.newFinalTotal)}</span>
-                </div>
-                <table className="data-table comparison-table">
-                  <thead>
-                    <tr>
-                      <th className="th-new">Product</th>
-                      <th className="th-new">Qty</th>
-                      <th className="th-new">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {renderHistoryItems(viewingPurchaseHistoryLog.newItemsJson)}
-                  </tbody>
-                </table>
-              </div>
-
-            </div>
-
-            <div className="modal-actions center-actions mt-2">
-              <button 
-                onClick={() => setViewingPurchaseHistoryLog(null)} 
-                className="btn btn-secondary w-100"
-              >
-                Close Comparison
-              </button>
+            <div className="modal-actions center-actions mt-2 pt-1 border-top">
+              <button onClick={() => setViewingReceipt(null)} className="btn btn-secondary w-100 fs-lg">Close Preview</button>
             </div>
           </div>
         </div>
@@ -3360,7 +3554,7 @@ export default function App() {
               </div>
               <div className="info-block">
                 <span className="info-label">MRP (Max Retail Price)</span>
-                <strong className="info-value text-muted text-strike">
+                <strong className="info-value text-muted">
                   {formatMoney(viewingProduct.mrp || viewingProduct.price)}
                 </strong>
               </div>
@@ -3443,7 +3637,7 @@ export default function App() {
                         <td className="fw-bold cell-padded">{formatProductId(product.id)}</td>
                         <td className="col-product-name cell-padded">{product.name}</td>
                         <td className="cell-padded">{product.hsnCode || 'N/A'}</td>
-                        <td className="text-muted cell-padded text-strike">
+                        <td className="text-muted cell-padded">
                           {formatMoney(product.mrp || product.price)}
                         </td>
                         <td className="price-text cell-padded">{formatMoney(product.price)}</td>

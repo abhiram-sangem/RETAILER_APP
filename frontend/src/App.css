@@ -1481,84 +1481,56 @@ body, html, #root {
 .text-dark-blue { color: #0f172a; }
 
 /* =========================================
-   --- PIXEL-PERFECT A4 PRINTABLE INVOICE ---
+   --- 4-SIDED MARGIN A4 PRINT TEMPLATE ---
    ========================================= */
 
-.print-only { display: none; }
+.print-only-block { 
+  display: none; 
+}
 
 @media print {
-  .no-print { display: none !important; }
-  .print-only { display: block !important; }
-  
-  /* margin: 0 completely hides the browser's default Date and URL stamps! */
-  @page { size: A4 portrait; margin: 0; }
-  
-  body { 
-    margin: 10mm !important; /* Add our own clean margin back */
-    background: white; 
-    -webkit-print-color-adjust: exact !important; 
-    print-color-adjust: exact !important; 
+  @page {
+    size: A4 portrait;
+    margin: 0; /* THIS REMOVES THE DATE, TITLE, AND LOCALHOST TEXT */
+  }
+
+  body, html, #root, .app-layout, .main-content {
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+    display: block !important;
+  }
+
+  .topbar, .no-print {
+    display: none !important;
+  }
+
+  .print-only-block {
+    display: block !important;
+    padding-top: 5mm !important; /* Pushes the box down so it doesn't hit the physical paper edge */
+    width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 
+/* THE MASTER 4-SIDED BORDER BOX */
 .invoice-a4-box {
-  width: 100%; 
-  max-width: 190mm; /* A4 width minus margins */
-  min-height: 277mm; /* Forces the box to exactly one A4 page height */
-  margin: 0 auto;
-  border: 1px solid #000;
-  font-family: Arial, sans-serif;
-  color: #000;
-  background: #fff;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
+  position: relative !important;
+  width: 718px !important;  
+  height: 1047px !important; 
+  margin: 0 auto !important;
+  border: 1px solid #000 !important; /* The 4-Sided Box */
+  box-sizing: border-box !important;
+  page-break-after: always;
+  page-break-inside: avoid;
+  overflow: hidden;
+  background: white;
 }
 
-.inv-header-flex { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #000; }
-.inv-h-left, .inv-h-right { width: 25%; }
-.inv-h-center { width: 50%; text-align: center; }
-
-.inv-label { font-size: 11px; margin-bottom: 4px; font-weight: bold; }
-.inv-company-name { font-size: 22px; font-weight: bold; margin: 0 0 4px 0; }
-.inv-company-text { font-size: 11px; margin: 2px 0; }
-.inv-logo-text { font-size: 28px; font-weight: 300; letter-spacing: 5px; margin: 0; padding-top: 15px; }
-
-.inv-customer-flex { display: flex; border-bottom: 1px solid #000; }
-.inv-cust-left { flex: 1; border-right: 1px solid #000; padding: 8px 12px; font-size: 11px; line-height: 1.4; }
-.inv-cust-right { width: 220px; padding: 8px 12px; font-size: 11px; line-height: 1.4; text-align: right;}
-.inv-cust-title { font-size: 13px; font-weight: bold; text-transform: uppercase; margin: 0 0 4px 0; }
-
-/* Main Table Structure */
-.inv-table { 
-  width: 100%; 
-  border-collapse: collapse; 
-  font-size: 11px; 
-  flex-grow: 1; /* This is the magic! It stretches the table to fill the rest of the A4 page */
+.invoice-a4-box:last-child {
+  page-break-after: auto;
 }
-
-.inv-table th, .inv-table td { border: 1px solid #000; padding: 4px 6px; } 
-.inv-table th { background-color: #d1d5db !important; font-weight: bold; text-align: center; height: 30px; }
-
-/* Lock the height of items and summary so ONLY the empty rows stretch */
-.inv-table-body tr.item-row td { height: 26px !important; }
-.inv-table-body tr.summary-row td { height: 24px !important; }
-
-/* Table Columns strictly matching the image */
-.col-sno { width: 5%; text-align: center; }
-.col-hsn { width: 10%; text-align: center; }
-.col-prod { width: 40%; }
-.col-qty { width: 15%; text-align: center; }
-.col-price { width: 15%; text-align: center; }
-.col-tot { width: 15%; text-align: right; }
-
-/* Specific Alignments */
-.text-center { text-align: center !important; }
-.text-right { text-align: right !important; }
-.text-left { text-align: left !important; }
-.align-top { vertical-align: top !important; }
-.fw-bold { font-weight: bold !important; }
-.border-right-bold { border-right: 1px solid #000 !important; }
-
-/* Footer */
-.inv-footer-tag { text-align: right; font-size: 10px; color: #555; padding: 5px 0px 0px 0px; margin-top: 5px; border-top: 1px solid #000; }

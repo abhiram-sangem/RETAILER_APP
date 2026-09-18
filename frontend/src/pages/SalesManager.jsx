@@ -33,9 +33,11 @@ export default function SalesManager({
     discountPercent: 0,
     taxPercent: 5,
     editingInvoiceId: null,
+    customInvoiceId: '', 
     isPayLater: false,
     paymentMethod: 'Cash',
     saleDate: new Date().toISOString().split('T')[0],
+    dueDays: '', // CHANGED: Now tracks number of days
     isDropdownOpen: false
   });
 
@@ -122,6 +124,7 @@ export default function SalesManager({
         <option value="year">📅 This Year</option>
         <option value="custom">⚙️ Custom Range...</option>
       </select>
+      
       {dateFilterRange === 'custom' && (
         <div className="custom-date-range">
           <input type="date" className="form-control mb-0 date-input-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
@@ -211,6 +214,7 @@ export default function SalesManager({
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  
   const paginatedInvoices = filteredInvoices.slice(indexOfFirstItem, indexOfLastItem);
   const paginatedInvoiceHistory = filteredInvoiceHistory.slice(indexOfFirstItem, indexOfLastItem);
 
@@ -304,14 +308,19 @@ export default function SalesManager({
     setView('payment-screen');
   }
 
-  function submitFinalSale() {
-    const finalPaymentMethod = activeTab.isPayLater ? 'Pay Later' : activeTab.paymentMethod;
+  function submitFinalSale(isDirectPayLater = false) {
+    if (!activeTab.cart.length) return window.alert('Cart is empty.');
+    if (!activeTab.activeCustomer) return window.alert('Please select a customer before submitting.');
+    
+    const finalPaymentMethod = (activeTab.isPayLater || isDirectPayLater) ? 'Pay Later' : activeTab.paymentMethod;
 
     if (activeTab.editingInvoiceId) {
       invoiceService.update(
         activeTab.editingInvoiceId, activeTab.activeCustomer.name, activeTab.cart,
         activeBillingDetails.subtotal, activeTab.discountPercent, activeBillingDetails.cgst,
-        activeBillingDetails.sgst, activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate
+        activeBillingDetails.sgst, activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate,
+        activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
+        activeTab.customInvoiceId
       ).then(invoice => {
         window.alert(`Sale ${formatInvoiceId(invoice.id)} updated successfully!`);
         closeTab(activeTabId, { stopPropagation: () => {} });
@@ -327,7 +336,9 @@ export default function SalesManager({
       invoiceService.create(
         activeTab.activeCustomer.name, activeTab.cart, activeBillingDetails.subtotal, 
         activeTab.discountPercent, activeBillingDetails.cgst, activeBillingDetails.sgst,
-        activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate
+        activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate,
+        activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
+        activeTab.customInvoiceId
       ).then(invoice => {
         window.alert(`Sale ${formatInvoiceId(invoice.id)} completed successfully!`);
         closeTab(activeTabId, { stopPropagation: () => {} });
@@ -339,6 +350,13 @@ export default function SalesManager({
           setTimeout(() => window.print(), 800);
         });
       }).catch(err => window.alert('Failed to complete sale. ' + err.message));
+    }
+  }
+
+  function cancelSale() {
+    if (window.confirm("Are you sure you want to cancel the current sale/edit?")) {
+      closeTab(activeTabId, { stopPropagation: () => {} });
+      setView('list');
     }
   }
 
@@ -364,8 +382,8 @@ export default function SalesManager({
     editTab.isPayLater = invoice.paymentMethod === 'Pay Later';
     editTab.paymentMethod = editTab.isPayLater ? 'Cash' : (invoice.paymentMethod || 'Cash');
     editTab.saleDate = invoice.orderDate ? invoice.orderDate.split('T')[0] : new Date().toISOString().split('T')[0];
-    
-    // Indestructible Map: Safe Check for nested product data
+    editTab.customInvoiceId = invoice.customInvoiceId || '';
+    editTab.dueDays = invoice.dueDays ? invoice.dueDays.toString() : ''; // Populates back
     editTab.cart = invoice.items.map(item => ({
       ...item.product, 
       id: item.product?.id || item.id, 
@@ -402,7 +420,6 @@ export default function SalesManager({
     if (itemsToReturn.length === 0) return window.alert("Please select at least one item to return.");
     if (!window.confirm(`Process return for ${itemsToReturn.length} items? This will generate a negative bill and restore inventory.`)) return;
 
-    // Indestructible Mapping for Return IDs
     invoiceService.returnInvoice(
       returnSaleData.id, 
       itemsToReturn.map(i => ({ id: i.product?.id || i.id, quantity: Number(i.returnQty), price: i.price })),
@@ -417,9 +434,11 @@ export default function SalesManager({
   const parseItems = (json) => {
     try { return JSON.parse(json) || []; } catch { return []; }
   };
+
   const renderHistoryItems = (jsonString) => {
     const items = parseItems(jsonString);
     if (!items.length) return <tr><td colSpan="3" className="text-muted">No items</td></tr>;
+    
     return items.map((item, idx) => (
       <tr key={idx} className="bg-transparent">
         <td className="fw-bold">{item.name || 'Unknown'}</td>
@@ -428,10 +447,12 @@ export default function SalesManager({
       </tr>
     ));
   };
+
   const renderHistorySummary = (itemsJson, finalTotal) => {
     const items = parseItems(itemsJson);
     const calcSubtotal = items.reduce((sum, i) => sum + ((i.price || i.purchasePrice || 0) * (i.qty || i.quantity || 0)), 0);
     const totalQty = items.reduce((sum, i) => sum + (i.qty || i.quantity || 0), 0);
+    
     return (
       <div className="receipt-panel receipt-summary-box">
         <div className="receipt-row receipt-three-col mb-0-5">
@@ -452,8 +473,8 @@ export default function SalesManager({
 
   return (
     <>
-      {/* 1. EVERYTHING IN HERE IS HIDDEN ON PRINT */}
       <div className="no-print">
+        {/* --- VIEW 1: MULTI-TAB CART --- */}
         {view === 'list' && (
           <div>
             <div className="tabs-container">
@@ -473,8 +494,9 @@ export default function SalesManager({
                     ⤓ Save to Drafts
                   </button>
                 </div>
-                <div className="sales-control-row">
-                  <div className="input-group customer-dropdown-group">
+                
+                <div className="sales-control-row mt-1 mb-1-5" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                  <div className="input-group customer-dropdown-group" style={{ flex: '2', minWidth: '250px' }}>
                     <label>Select Customer</label>
                     <div className="dropdown-container">
                       <input
@@ -499,11 +521,37 @@ export default function SalesManager({
                     </div>
                   </div>
 
-                  <div className="action-buttons-right">
-                    <button className="btn btn-primary" onClick={() => { setSearchQuery(''); setShowAddProductModal(true); }}>
-                      + Add Products
-                    </button>
+                  <div className="input-group" style={{ flex: '1', minWidth: '130px' }}>
+                    <label>Invoice No. (Opt)</label>
+                    <input 
+                      type="text" className="form-control mb-0" placeholder="Auto" 
+                      value={activeTab.customInvoiceId || ''} 
+                      onChange={e => updateActiveTab({ customInvoiceId: e.target.value })} 
+                    />
                   </div>
+                  <div className="input-group" style={{ flex: '1', minWidth: '130px' }}>
+                    <label>Sale Date</label>
+                    <input 
+                      type="date" className="form-control mb-0" 
+                      value={activeTab.saleDate} 
+                      onChange={e => updateActiveTab({ saleDate: e.target.value })} 
+                      disabled={!!activeTab.editingInvoiceId} 
+                    />
+                  </div>
+                  <div className="input-group" style={{ flex: '1', minWidth: '130px' }}>
+                    <label>Due In (Days)</label>
+                    <input 
+                      type="number" className="form-control mb-0" placeholder="e.g. 15"
+                      value={activeTab.dueDays || ''} 
+                      onChange={e => updateActiveTab({ dueDays: e.target.value })} 
+                    />
+                  </div>
+                </div>
+
+                <div className="d-flex justify-end mt-1">
+                  <button className="btn btn-primary" onClick={() => { setSearchQuery(''); setShowAddProductModal(true); }}>
+                    + Add Products
+                  </button>
                 </div>
               </div>
 
@@ -547,9 +595,10 @@ export default function SalesManager({
                   </table>
                 </div>
 
+                {/* COMPACT PROPORTIONAL BILL SUMMARY */}
                 {activeTab.cart.length > 0 && (
-                  <div className="receipt-wrapper">
-                    <div className="receipt-panel full-width-panel">
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', marginBottom: '1rem', paddingRight: '1rem' }}>
+                    <div className="receipt-panel shadow-panel" style={{ width: '400px', marginTop: 0, padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc' }}>
                       <h3 className="receipt-header">Bill Summary</h3>
                       <div className="receipt-summary-header">
                         <span className="fw-bold text-slate">Total Items: {activeTab.cart.length}</span>
@@ -598,7 +647,11 @@ export default function SalesManager({
                         <span>Final Total:</span><span className="text-center text-muted"></span>
                         <span className="text-success text-right">{formatMoney(activeBillingDetails.finalTotal)}</span>
                       </div>
-                      <button className="btn btn-success btn-checkout" onClick={proceedToPayment}>Proceed to Payment</button>
+                      
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                        <button className="btn btn-warning flex-1 btn-checkout mt-0" onClick={() => submitFinalSale(true)}>Submit (Pay Later)</button>
+                        <button className="btn btn-success flex-1 btn-checkout mt-0" onClick={proceedToPayment}>Proceed to Pay</button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -607,6 +660,7 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: DRAFTS --- */}
         {view === 'drafts-list' && (
           <div className="card">
             <div className="card-header header-actions">
@@ -645,6 +699,7 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: PAYMENT SCREEN --- */}
         {view === 'payment-screen' && (
           <div className="card">
             <div className="card-header header-actions">
@@ -654,15 +709,6 @@ export default function SalesManager({
               <button className="btn btn-secondary action-buttons-right" onClick={() => setView('list')}>Back to Cart</button>
             </div>
             <div className="form-container payment-container">
-              <div className="form-group">
-                <label className="form-label">Date of Sale:</label>
-                <input
-                  type="date" className="form-control payment-input"
-                  value={activeTab.saleDate}
-                  onChange={e => updateActiveTab({ saleDate: e.target.value })}
-                  disabled={!!activeTab.editingInvoiceId} 
-                />
-              </div>
               <div className="form-group">
                 <label className="form-label">Final Payable Amount:</label>
                 <input type="text" className="form-control fw-bold price-text fs-xxl" value={`${formatMoney(activeBillingDetails.finalTotal)}`} readOnly />
@@ -689,14 +735,15 @@ export default function SalesManager({
                 {activeTab.isPayLater && <div className="pay-later-warning">* This bill will be recorded as an unpaid balance.</div>}
               </div>
               <div className="modal-actions payment-actions">
-                <button className={`btn btn-checkout ${activeTab.isPayLater ? 'btn-warning' : 'btn-success'}`} onClick={submitFinalSale}>
-                  {activeTab.editingInvoiceId ? 'Save Edits' : 'Complete & Save Sale'}
+                <button className={`btn btn-checkout ${activeTab.isPayLater ? 'btn-warning' : 'btn-success'}`} onClick={() => submitFinalSale(false)}>
+                  {activeTab.editingInvoiceId ? 'Save Edits & Print' : 'Complete & Print Sale'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* --- VIEW: SALES LIST --- */}
         {view === 'invoices' && (
           <div className="card">
             <div className="card-header header-actions header-actions-wrap">
@@ -764,6 +811,7 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: INVOICE DETAILS --- */}
         {view === 'invoice-details' && selectedInvoice && selectedInvoiceMath && (
           <div className="card">
             <div className="card-header header-actions">
@@ -776,7 +824,14 @@ export default function SalesManager({
             
             <div className="invoice-summary-grid margin-top-large">
               <div className="info-block"><span className="info-label">Customer</span><strong className="info-value">{selectedInvoice.customerName}</strong></div>
-              <div className="info-block"><span className="info-label">Payment Method</span><strong className={`info-value ${selectedInvoice.paymentMethod === 'Pay Later' ? 'text-warning' : 'text-primary'}`}>{selectedInvoice.paymentMethod || 'Cash'}</strong></div>
+              <div className="info-block">
+                <span className="info-label">Payment Terms</span>
+                <strong className={`info-value ${selectedInvoice.paymentMethod === 'Pay Later' ? 'text-warning' : 'text-primary'}`}>
+                  {selectedInvoice.paymentMethod === 'Pay Later' && selectedInvoice.dueDays 
+                    ? `Net ${selectedInvoice.dueDays} Days` 
+                    : selectedInvoice.paymentMethod || 'Cash'}
+                </strong>
+              </div>
               <div className="info-block"><span className="info-label">Date</span><strong className="info-value">{new Date(selectedInvoice.orderDate).toLocaleDateString('en-GB')}</strong></div>
             </div>
             
@@ -788,7 +843,6 @@ export default function SalesManager({
                   {selectedInvoice.items?.map((item, idx) => (
                     <tr key={idx}>
                       <td className="fw-bold">{idx + 1}</td>
-                      {/* INDESTRUCTIBLE OPTIONAL CHAINING AVOIDS WHITE SCREEN CRASH */}
                       <td><span className="product-name-large">{item.product?.name || item.name || 'Unknown Product'}</span></td>
                       <td>{formatMoney(item.price)}</td>
                       <td className="fw-bold fs-lg">{item.quantity}</td>
@@ -821,26 +875,24 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: RETURN SALE --- */}
         {view === 'return-sale' && returnSaleData && returnMath && (
           <div className="card">
             <div className="card-header header-actions">
               <h2 className="card-title text-danger">Process Return: Bill {formatInvoiceId(returnSaleData.id)}</h2>
               <button className="btn btn-secondary action-buttons-right" onClick={() => { setReturnSaleData(null); setView('invoices'); }}>Cancel Return</button>
             </div>
-
             <div className="invoice-summary-grid margin-top-large">
               <div className="info-block"><span className="info-label">Customer</span><strong className="info-value">{returnSaleData.customerName}</strong></div>
               <div className="info-block"><span className="info-label">Original Date</span><strong className="info-value">{new Date(returnSaleData.orderDate).toLocaleDateString('en-GB')}</strong></div>
               <div className="info-block"><span className="info-label">Original Total</span><strong className="info-value text-success">{formatMoney(returnSaleData.finalTotal)}</strong></div>
             </div>
-
             <div className="table-responsive table-margin-bottom">
               <table className="data-table">
                 <thead><tr><th>Product</th><th>Price</th><th>Purchased Qty</th><th>Return Qty</th><th>Return Amount</th></tr></thead>
                 <tbody>
                   {returnSaleData.returnItems.map((item, idx) => (
                     <tr key={idx}>
-                      {/* INDESTRUCTIBLE OPTIONAL CHAINING */}
                       <td><span className="product-name-large">{item.product?.name || item.name || 'Unknown Product'}</span></td>
                       <td>{formatMoney(item.price)}</td>
                       <td className="fw-bold fs-lg">{item.quantity}</td>
@@ -865,7 +917,6 @@ export default function SalesManager({
                 </tbody>
               </table>
             </div>
-
             <div className="invoice-math-wrapper">
               <div className="receipt-panel full-width-panel border-danger">
                 <div className="receipt-row receipt-three-col"><span className="fw-bold">Return Subtotal:</span><span className="text-center text-muted"></span><span className="text-right text-danger">-{formatMoney(returnMath.subtotal)}</span></div>
@@ -875,7 +926,6 @@ export default function SalesManager({
                 <div className="receipt-row receipt-three-col"><span className="text-muted">Subtotal (Excl. Tax):</span><span className="text-center text-muted"></span><span className="text-right text-danger">-{formatMoney(returnMath.taxableAmount)}</span></div>
                 <div className="receipt-row receipt-three-col"><span className="text-muted">Return CGST / SGST:</span><span className="text-center text-muted"></span><span className="text-right text-danger">-{formatMoney(returnMath.cgst + returnMath.sgst)}</span></div>
                 <div className="receipt-total receipt-three-col border-top-danger"><span>Total Refund Amount:</span><span className="text-center text-muted"></span><span className="text-right text-danger">-{formatMoney(returnMath.finalTotal)}</span></div>
-
                 <div className="modal-actions return-actions">
                   <button className="btn btn-warning p-1" onClick={handleReturnAllItems}>Select All Items (Return All)</button>
                   <button className="btn btn-danger btn-checkout mt-0 flex-1" onClick={submitReturn} disabled={returnMath.finalTotal === 0}>Confirm & Process Return</button>
@@ -885,13 +935,14 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: EDIT HISTORY --- */}
         {view === 'edit-history' && (
           <div className="card">
             <div className="card-header header-actions header-actions-wrap">
               <h2 className="card-title mb-0">Sales Edit History</h2>
               <div className="header-filters-group">
                 <input 
-                  type="text" className="form-control mb-0 search-input-md" placeholder="Search customer or ID..." 
+                  type="text" className="form-control mb-0 search-input-md" placeholder="Search customer or ID..."
                   value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
                 />
                 {renderDateFilter()}
@@ -919,6 +970,7 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- VIEW: EDIT HISTORY COMPARE --- */}
         {view === 'sale-edit-compare' && historyCompareData && (
           <div className="card">
             <div className="card-header header-actions">
@@ -929,7 +981,6 @@ export default function SalesManager({
               <span className="fw-bold text-slate">Customer: </span> {historyCompareData.customerName} &nbsp;|&nbsp;
               <span className="fw-bold text-slate"> Edited On: </span> {new Date(historyCompareData.editDate).toLocaleString('en-GB')}
             </div>
-
             <div className="comparison-grid">
               <div className="snapshot-old-wrapper">
                 <h3 className="snapshot-title-old">Old Bill Snapshot</h3>
@@ -941,7 +992,6 @@ export default function SalesManager({
                 </div>
                 {renderHistorySummary(historyCompareData.oldItemsJson, historyCompareData.oldFinalTotal)}
               </div>
-
               <div className="snapshot-new-wrapper">
                 <h3 className="snapshot-title-new">New Bill Snapshot</h3>
                 <div className="table-res-new">
@@ -956,22 +1006,35 @@ export default function SalesManager({
           </div>
         )}
 
+        {/* --- UPGRADED FLOATING TILES MODAL: ADD PRODUCT --- */}
         {showAddProductModal && (
           <div className="modal-overlay">
-            <div className="modal-content modal-large">
-              <div className="card-header header-actions border-none pb-0">
+            {/* Height extended to 95vh to fit more products */}
+            <div className="modal-content" style={{ maxWidth: '1000px', width: '95%', height: '95vh', display: 'flex', flexDirection: 'column', padding: '1.5rem', backgroundColor: '#f1f5f9' }}>
+              <div className="card-header header-actions border-none" style={{ paddingBottom: '0', marginBottom: '10px' }}>
                 <h3 className="modal-header-title mb-0">Select Products</h3>
-                <button className="btn btn-secondary action-buttons-right" onClick={() => { setShowAddProductModal(false); setSearchQuery(''); }}>Close</button>
+                <button className="btn btn-secondary action-buttons-right btn-sm" onClick={() => { setShowAddProductModal(false); setSearchQuery(''); }}>Close</button>
               </div>
-              <div className="form-group mt-1">
+              
+              <div className="form-group" style={{ marginBottom: '15px' }}>
                 <input 
                   type="text" className="form-control mb-0" placeholder="Search product name, HSN code or Product ID..." 
                   value={searchQuery} onChange={e => setSearchQuery(e.target.value)} 
+                  style={{ padding: '0.8rem', fontSize: '1.1rem' }}
                 />
               </div>
-              <div className="table-responsive modal-scroll-area-nobottom">
-                <table className="block-table data-table table-fixed">
-                  <thead><tr><th className="col-15">ID</th><th className="col-30">Product Name</th><th className="col-15">HSN Code</th><th className="col-10">MRP</th><th className="col-15">Selling Price</th><th className="col-15">Stock</th></tr></thead>
+              
+              <div className="table-responsive modal-scroll-area-nobottom px-1 pb-1">
+                <table className="floating-tiles-table w-100">
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                    <tr>
+                      <th className="text-left col-15">ID</th>
+                      <th className="text-left col-35">Product Name</th>
+                      <th className="text-center col-15">HSN Code</th>
+                      <th className="text-right col-15">Selling Price</th>
+                      <th className="text-center col-15">Stock</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {filteredProducts.map(product => {
                       const cartItem = activeTab.cart.find(c => c.id === product.id);
@@ -981,19 +1044,18 @@ export default function SalesManager({
                       
                       return (
                         <tr 
-                          key={product.id} className={`product-row ${isOutOfStock ? 'out-of-stock' : 'available'}`} 
+                          key={product.id} className={`clickable-row ${isOutOfStock ? 'out-of-stock' : 'available'}`} 
                           onClick={() => { if (!isOutOfStock) addToCart(product); }} title={isOutOfStock ? 'Out of stock' : 'Click block to add to cart'}
                         >
-                          <td className="fw-bold cell-padded">{formatProductId(product.id)}</td>
-                          <td className="col-product-name cell-padded">{product.name}</td>
-                          <td className="cell-padded">{product.hsnCode || 'N/A'}</td>
-                          <td className="text-muted cell-padded">{formatMoney(product.mrp || product.price)}</td>
-                          <td className="price-text cell-padded">{formatMoney(product.price)}</td>
-                          <td className={`fw-bold cell-padded ${isOutOfStock ? 'text-danger' : 'text-success'}`}>{isOutOfStock ? 'Out of Stock' : `${availableStock} Units`}</td>
+                          <td className="fw-bold text-slate">{formatProductId(product.id)}</td>
+                          <td className="product-name-large">{product.name}</td>
+                          <td className="text-center text-muted">{product.hsnCode || 'N/A'}</td>
+                          <td className="price-text text-right text-success">{formatMoney(product.price)}</td>
+                          <td className={`fw-bold text-center ${isOutOfStock ? 'text-danger' : 'text-primary'}`}>{isOutOfStock ? 'Out of Stock' : `${availableStock} Units`}</td>
                         </tr>
                       )
                     })}
-                    {filteredProducts.length === 0 && <tr><td colSpan={6} className="empty-state">No products found.</td></tr>}
+                    {filteredProducts.length === 0 && <tr><td colSpan={5} className="empty-state border-none">No products found.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1002,9 +1064,9 @@ export default function SalesManager({
         )}
       </div>
 
-      {/* 2. ONLY THIS BLOCK PRINTS ON THE PAPER */}
+      {/* ONLY THIS BLOCK PRINTS ON THE PAPER */}
       <div className="print-only-block">
-        {view === 'invoice-details' && selectedInvoice && selectedInvoiceMath && (
+        {selectedInvoice && selectedInvoiceMath && (
           <PrintableInvoice 
             selectedInvoice={selectedInvoice} 
             selectedInvoiceMath={selectedInvoiceMath} 

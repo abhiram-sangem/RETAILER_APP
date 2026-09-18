@@ -46,59 +46,55 @@ export const productService = {
 }
 
 export const invoiceService = {
-  create: (customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate) =>
+  create: (customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId) =>
     fetch(`${API_URL}/api/invoices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        customerName, 
-        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
-        grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate
+         customerName, 
+         cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+         grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
       }),
     }).then(async res => {
       if (!res.ok) throw new Error(await res.text() || 'Invoice creation failed');
       return res.json();
     }),
-
-  update: (id, customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate) =>
+  update: (id, customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId) =>
     fetch(`${API_URL}/api/invoices/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        customerName, 
-        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
-        grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate
+         customerName, 
+         cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+         grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
       }),
     }).then(async res => {
       if (!res.ok) throw new Error(await res.text() || 'Invoice update failed');
       return res.json();
     }),
-
   returnInvoice: (id, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
     fetch(`${API_URL}/api/invoices/${id}/return`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
-        grossTotal, discountPercent, cgst, sgst, finalTotal
+         cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price })), 
+         grossTotal, discountPercent, cgst, sgst, finalTotal 
       }),
     }).then(async res => {
       if (!res.ok) throw new Error(await res.text() || 'Return processing failed');
       return res.json();
     }),
-
   getInvoices: () =>
     fetch(`${API_URL}/api/invoices`).then(res => {
       if (!res.ok) throw new Error('Failed to load invoices')
       return res.json()
     }),
-
   getInvoiceById: (id) =>
     fetch(`${API_URL}/api/invoices/${id}`).then(res => {
       if (!res.ok) throw new Error('Failed to load invoice')
       return res.json()
-    }),
-}
+    })
+};
 
 export const customerService = {
   getCustomers: () =>
@@ -145,6 +141,41 @@ export const customerService = {
     }),
 }
 
+export const vendorService = {
+  getVendors: () =>
+    fetch(`${API_URL}/api/vendors`).then(res => {
+      if (!res.ok) throw new Error('Failed to load vendors')
+      return res.json()
+    }),
+
+  addVendor: (name, phone, gstno, address, city, balance) =>
+    fetch(`${API_URL}/api/vendors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone, gstno, address, city, balance: balance || 0 }),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to add vendor')
+      return res.json()
+    }),
+
+  updateVendor: (id, name, phone, gstno, address, city, balance) =>
+    fetch(`${API_URL}/api/vendors/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone, gstno, address, city, balance }),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to update vendor')
+      return res.json()
+    }),
+
+  deleteVendor: (id) =>
+    fetch(`${API_URL}/api/vendors/${id}`, {
+      method: 'DELETE',
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to delete vendor')
+    }),
+}
+
 export const purchaseInvoiceService = {
   getPurchaseInvoices: () =>
     fetch(`${API_URL}/api/purchase-invoices`).then(res => {
@@ -158,12 +189,14 @@ export const purchaseInvoiceService = {
       return res.json()
     }),
 
-  create: (sellerName, purchaseDate, customInvoiceId, purchaseCart, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
+  // VENDOR DATA INJECTED BELOW
+  create: (sellerName, purchaseDate, customInvoiceId, purchaseCart, grossTotal, discountPercent, cgst, sgst, finalTotal, sellerPhone, sellerGst) =>
     fetch(`${API_URL}/api/purchase-invoices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sellerName, purchaseDate, customInvoiceId, grossTotal, discountPercent, cgst, sgst, finalTotal,
+        sellerPhone, sellerGst, // <--- New fields mapped here
         items: purchaseCart.map(item => ({ productId: item.id || item.product?.id, quantity: item.quantity, purchasePrice: item.purchasePrice }))
       }),
     }).then(async res => {
@@ -171,12 +204,13 @@ export const purchaseInvoiceService = {
       return res.json()
     }),
 
-  update: (id, sellerName, purchaseDate, customInvoiceId, purchaseCart, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
+  update: (id, sellerName, purchaseDate, customInvoiceId, purchaseCart, grossTotal, discountPercent, cgst, sgst, finalTotal, sellerPhone, sellerGst) =>
     fetch(`${API_URL}/api/purchase-invoices/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sellerName, purchaseDate, customInvoiceId, grossTotal, discountPercent, cgst, sgst, finalTotal,
+        sellerPhone, sellerGst, // <--- New fields mapped here
         items: purchaseCart.map(item => ({ productId: item.id || item.product?.id, quantity: item.quantity, purchasePrice: item.purchasePrice }))
       }),
     }).then(async res => {
@@ -204,7 +238,6 @@ export const historyService = {
 }
 
 export const receiptService = {
-  // Added discountAmount and receiptDate
   create: (customerId, amount, discountAmount, paymentMode, receiptDate, remarks) =>
     fetch(`${API_URL}/api/receipts`, {
       method: 'POST',

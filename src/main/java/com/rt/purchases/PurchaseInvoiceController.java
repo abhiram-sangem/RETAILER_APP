@@ -32,15 +32,12 @@ public class PurchaseInvoiceController {
 
     @Autowired
     private PurchaseInvoiceRepository purchaseInvoiceRepository;
-
     @Autowired
     private ProductRepository productRepository;
-
     @Autowired
     private PurchaseInvoiceHistoryRepository purchaseInvoiceHistoryRepository;
-
     @Autowired
-    private InventoryHistoryRepository inventoryHistoryRepository; // <-- Added to fix History logs!
+    private InventoryHistoryRepository inventoryHistoryRepository;
 
     @GetMapping
     public ResponseEntity<List<PurchaseInvoice>> getAllPurchaseInvoices() {
@@ -60,6 +57,11 @@ public class PurchaseInvoiceController {
         try {
             PurchaseInvoice invoice = new PurchaseInvoice();
             invoice.setSellerName((String) payload.get("sellerName"));
+            
+            // --- CATCHING NEW VENDOR DATA ---
+            invoice.setSellerPhone((String) payload.get("sellerPhone"));
+            invoice.setSellerGst((String) payload.get("sellerGst"));
+
             invoice.setCustomInvoiceId((String) payload.get("customInvoiceId"));
             
             String dateStr = (String) payload.get("purchaseDate");
@@ -85,17 +87,15 @@ public class PurchaseInvoiceController {
                 Product product = productRepository.findById(productId)
                         .orElseThrow(() -> new RuntimeException("Product not found"));
 
-                // Increase Stock
                 product.setStock(product.getStock() + quantity);
                 product.setPurchasePrice(purchasePrice);
                 productRepository.save(product);
 
-                // Create History Log for Purchase!
                 InventoryHistory log = new InventoryHistory();
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE");
-                log.setQuantityChanged(quantity); // Stock went up
+                log.setQuantityChanged(quantity); 
                 log.setFinalStock(product.getStock());
                 log.setDescription("Vendor Purchase from " + invoice.getSellerName());
                 log.setTimestamp(LocalDateTime.now());
@@ -138,7 +138,6 @@ public class PurchaseInvoiceController {
 
             Double oldFinalTotal = existingInvoice.getFinalTotal();
 
-            // Revert old inventory and log it
             for (PurchaseInvoiceItem oldItem : existingInvoice.getItems()) {
                 Product product = oldItem.getProduct();
                 product.setStock(product.getStock() - oldItem.getQuantity());
@@ -148,7 +147,7 @@ public class PurchaseInvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE_EDIT_REVERT");
-                log.setQuantityChanged(-oldItem.getQuantity()); // Stock went down
+                log.setQuantityChanged(-oldItem.getQuantity());
                 log.setFinalStock(product.getStock());
                 log.setDescription("Reverting Purchase Invoice Edit #" + existingInvoice.getId());
                 log.setTimestamp(LocalDateTime.now());
@@ -156,8 +155,12 @@ public class PurchaseInvoiceController {
             }
 
             existingInvoice.getItems().clear();
-
             existingInvoice.setSellerName((String) payload.get("sellerName"));
+            
+            // --- CATCHING NEW VENDOR DATA ---
+            existingInvoice.setSellerPhone((String) payload.get("sellerPhone"));
+            existingInvoice.setSellerGst((String) payload.get("sellerGst"));
+
             existingInvoice.setCustomInvoiceId((String) payload.get("customInvoiceId"));
             
             String dateStr = (String) payload.get("purchaseDate");
@@ -183,7 +186,6 @@ public class PurchaseInvoiceController {
                 Product product = productRepository.findById(productId)
                         .orElseThrow(() -> new RuntimeException("Product not found"));
 
-                // Apply new inventory and log it
                 product.setStock(product.getStock() + quantity);
                 product.setPurchasePrice(purchasePrice);
                 productRepository.save(product);
@@ -192,7 +194,7 @@ public class PurchaseInvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE_EDIT_APPLY");
-                log.setQuantityChanged(quantity); // Stock goes back up
+                log.setQuantityChanged(quantity); 
                 log.setFinalStock(product.getStock());
                 log.setDescription("Applying Edit to Purchase Invoice #" + existingInvoice.getId());
                 log.setTimestamp(LocalDateTime.now());

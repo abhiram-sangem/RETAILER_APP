@@ -170,7 +170,7 @@ export default function PrintableInvoice({ selectedInvoice, selectedInvoiceMath,
                 </div>
 
                 <div style={{ position: 'absolute', left: config.meta.x, top: config.meta.y, width: config.meta.width, height: config.meta.height || 'auto', fontSize: `${config.meta.fontSize || 12}px`, fontFamily: config.meta.fontFamily, padding: '10px 15px', lineHeight: '1.8', fontWeight: 'bold', textAlign: 'right' }}>
-                  <div>{new Date(inv.orderDate).toLocaleString('en-GB').replace(',', '')}</div>
+                  <div>{new Date(inv.orderDate).toLocaleDateString('en-GB')} {new Date(inv.orderDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                   <div>{formatInvoiceId(inv.id)}</div>
                 </div>
 

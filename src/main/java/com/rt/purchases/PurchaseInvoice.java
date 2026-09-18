@@ -20,10 +20,15 @@ public class PurchaseInvoice {
 
     private String customInvoiceId;
     private String sellerName;
+    
+    // --- NEW VENDOR DETAILS ---
+    private String sellerPhone;
+    private String sellerGst;
+
     private LocalDate purchaseDate;
     private LocalDateTime entryDate;
 
-    // --- NEW BILLING COLUMNS ---
+    // --- BILLING COLUMNS ---
     private Double grossTotal;
     private Double discountPercent;
     private Double cgst;
@@ -42,6 +47,12 @@ public class PurchaseInvoice {
 
     public String getSellerName() { return sellerName; }
     public void setSellerName(String sellerName) { this.sellerName = sellerName; }
+
+    public String getSellerPhone() { return sellerPhone; }
+    public void setSellerPhone(String sellerPhone) { this.sellerPhone = sellerPhone; }
+
+    public String getSellerGst() { return sellerGst; }
+    public void setSellerGst(String sellerGst) { this.sellerGst = sellerGst; }
 
     public LocalDate getPurchaseDate() { return purchaseDate; }
     public void setPurchaseDate(LocalDate purchaseDate) { this.purchaseDate = purchaseDate; }

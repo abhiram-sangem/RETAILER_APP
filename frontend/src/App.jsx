@@ -17,11 +17,13 @@ import LedgerManager from './pages/LedgerManager';
 import ReceiptManager from './pages/ReceiptManager';
 import InventoryManager from './pages/InventoryManager';
 import InvoiceBuilder from './pages/InvoiceBuilder';
+import SettingsManager from './pages/SettingsManager';
+import VendorManager from './pages/VendorManager';
 
 // --- API ---
 import { 
   productService, invoiceService, customerService, 
-  purchaseInvoiceService, historyService, receiptService
+  purchaseInvoiceService, historyService, receiptService,vendorService
 } from './services/api';
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
   const [inventoryHistory, setInventoryHistory] = useState([]);
   const [invoiceHistory, setInvoiceHistory] = useState([]);
   const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([]);
+  const [vendors, setVendors] = useState([]);
 
   // --- INITIAL DATA LOAD ---
   useEffect(() => {
@@ -50,8 +53,9 @@ export default function App() {
     loadPurchaseInvoices();
     loadHistory();
     loadReceipts();
+    loadVendors();
   }, []);
-
+  function loadVendors() { vendorService.getVendors().then(data => setVendors(data || [])); }
   function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])); }
   function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])); }
   function loadInvoices() { invoiceService.getInvoices().then(data => setInvoices((data || []).sort((a, b) => b.id - a.id))); }
@@ -71,7 +75,7 @@ export default function App() {
       const d = new Date(inv.orderDate);
       const total = inv.finalTotal || inv.totalAmount || 0;
       
-      const daySortKey = d.toISOString().split('T')[0];
+      const daySortKey = d.toISOString().split('T')[0]; 
       const startOfWeek = new Date(d); startOfWeek.setDate(d.getDate() - d.getDay());
       const weekSortKey = startOfWeek.toISOString().split('T')[0];
       const monthSortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -146,7 +150,7 @@ export default function App() {
 
         {/* RECEIPTS */}
         {['receipts', 'receipts-list'].includes(view) && (
-          <ReceiptManager view={view} setView={setView} customers={customers} receipts={receipts} loadCustomers={loadCustomers} loadReceipts={loadReceipts} />
+          <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} loadCustomers={loadCustomers} loadReceipts={loadReceipts} />
         )}
 
         {/* REPORTS */}
@@ -160,10 +164,16 @@ export default function App() {
           <ReportsManager invoices={invoices} purchaseInvoices={purchaseInvoices} products={products} customers={customers} />
         )}
 
-        {/* INVOICE BUILDER */}
-        {view === 'invoice-builder' && (
-          <InvoiceBuilder />
+        {/* SETTINGS MODULE */}
+        {view === 'settings' && (
+          <SettingsManager />
         )}
+
+        {/* VENDOR MANAGEMENT */}
+        {view === 'vendors-manage' && (
+          <VendorManager vendors={vendors} loadVendors={loadVendors} />
+        )}
+
       </main>
     </div>
   );

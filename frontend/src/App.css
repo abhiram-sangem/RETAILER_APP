@@ -1534,3 +1534,65 @@ body, html, #root {
 .invoice-a4-box:last-child {
   page-break-after: auto;
 }
+
+/* =========================================
+   --- FLOATING TILES UI (MODALS) ---
+   ========================================= */
+.floating-tiles-table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0 8px !important; /* Decreased from 12px */
+  background: transparent !important;
+}
+
+.floating-tiles-table thead th {
+  border: none !important;
+  background: transparent !important;
+  color: #64748b;
+  font-size: 13px; /* Slightly smaller */
+  padding: 0 16px 6px 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.floating-tiles-table tbody tr.available {
+  background-color: #fff !important;
+  box-shadow: 0 2px 4px -1px rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.floating-tiles-table tbody tr.out-of-stock {
+  background-color: #f8fafc !important;
+  opacity: 0.6;
+}
+
+.floating-tiles-table tbody tr.available:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px -3px rgba(0,0,0,0.1);
+}
+
+.floating-tiles-table tbody td {
+  border: solid 1px #e2e8f0 !important;
+  border-style: solid none !important;
+  padding: 10px 16px !important; /* Squeezed padding from 20px to 10px */
+  font-size: 14px; /* Scaled down slightly */
+  vertical-align: middle;
+}
+
+.floating-tiles-table tbody td:first-child {
+  border-left-style: solid !important;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+.floating-tiles-table tbody td:last-child {
+  border-right-style: solid !important;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.floating-tiles-table .product-name-large {
+  font-size: 1.05rem; /* Shrunk from 1.25rem */
+  font-weight: 700;
+  color: #0f172a;
+}

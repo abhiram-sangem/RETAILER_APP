@@ -12,11 +12,10 @@ import jakarta.persistence.OneToMany;
 
 @Entity
 public class Invoice {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    
     private String customerName;
     private LocalDateTime orderDate;
     private Double grossTotal;
@@ -24,49 +23,59 @@ public class Invoice {
     private Double cgst;
     private Double sgst;
     private Double finalTotal;
-    private String paymentMethod; // Added Payment Method field
+    private String paymentMethod; 
     
-    // --- NEW FIELDS FOR RETURNS ---
+    // --- NEW FIELDS ---
+    private Integer dueDays;
+    private String customInvoiceId;
+    
+    // --- FIELDS FOR RETURNS ---
     private Boolean isReturn = false;
     private Long originalInvoiceId;
 
-    // Added orphanRemoval = true so items delete cleanly during an Edit
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "invoice", orphanRemoval = true)
     private List<InvoiceItem> items;
 
+    // --- GETTERS AND SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-
+    
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
-
+    
     public LocalDateTime getOrderDate() { return orderDate; }
     public void setOrderDate(LocalDateTime orderDate) { this.orderDate = orderDate; }
-
+    
     public Double getGrossTotal() { return grossTotal; }
     public void setGrossTotal(Double grossTotal) { this.grossTotal = grossTotal; }
-
+    
     public Double getDiscountPercent() { return discountPercent; }
     public void setDiscountPercent(Double discountPercent) { this.discountPercent = discountPercent; }
-
+    
     public Double getCgst() { return cgst; }
     public void setCgst(Double cgst) { this.cgst = cgst; }
-
+    
     public Double getSgst() { return sgst; }
     public void setSgst(Double sgst) { this.sgst = sgst; }
-
+    
     public Double getFinalTotal() { return finalTotal; }
     public void setFinalTotal(Double finalTotal) { this.finalTotal = finalTotal; }
-
+    
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
 
+    public Integer getDueDays() { return dueDays; }
+    public void setDueDays(Integer dueDays) { this.dueDays = dueDays; }
+
+    public String getCustomInvoiceId() { return customInvoiceId; }
+    public void setCustomInvoiceId(String customInvoiceId) { this.customInvoiceId = customInvoiceId; }
+    
     public Boolean getIsReturn() { return isReturn; }
     public void setIsReturn(Boolean isReturn) { this.isReturn = isReturn; }
-
+    
     public Long getOriginalInvoiceId() { return originalInvoiceId; }
     public void setOriginalInvoiceId(Long originalInvoiceId) { this.originalInvoiceId = originalInvoiceId; }
-
+    
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }
 }

@@ -19,8 +19,9 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const [receiptMethod, setReceiptMethod] = useState('Cash');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
   const [receiptRemarks, setReceiptRemarks] = useState('Payment received with thanks.');
+  const [customReceiptId, setCustomReceiptId] = useState('');
 
-  // NEW STATE: Track which bills are excluded from this payment
+  // Track which bills are excluded/disputed
   const [excludedBills, setExcludedBills] = useState(new Set());
 
   const [viewingReceipt, setViewingReceipt] = useState(null);
@@ -90,6 +91,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const filteredReceipts = receipts.filter(r => 
     ((r.customerName && r.customerName.toLowerCase().includes(safeSearch)) ||
     (r.paymentMode && r.paymentMode.toLowerCase().includes(safeSearch)) ||
+    (r.customReceiptId && r.customReceiptId.toLowerCase().includes(safeSearch)) ||
     formatReceiptId(r.id).toLowerCase().includes(safeSearch)) &&
     isWithinDateRange(r.receiptDate)
   );
@@ -99,12 +101,11 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem);
 
   // ============================================================================
-  // 🚀 ADVANCED FIFO PAYMENT ALLOCATION ENGINE (WITH DISPUTE EXCLUSION)
+  // 🚀 ADVANCED FIFO PAYMENT ALLOCATION ENGINE 
   // ============================================================================
   const pendingBills = useMemo(() => {
     if (!receiptCustomer) return [];
     
-    // 1. Find all past credits
     let totalCredits = 0;
     receipts.forEach(r => {
       if (r.customerId === receiptCustomer.id || r.customerName === receiptCustomer.name) {
@@ -117,12 +118,10 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
       }
     });
 
-    // 2. Get all 'Pay Later' bills for this customer, sorted Oldest First
     const payLaterBills = invoices
       .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && inv.customerName === receiptCustomer.name)
       .sort((a, b) => new Date(a.orderDate) - new Date(b.orderDate));
 
-    // 3. Apply credits sequentially to figure out what is STILL UNPAID
     const pending = [];
     payLaterBills.forEach(bill => {
       let due = Number(bill.finalTotal || bill.totalAmount || 0);
@@ -141,7 +140,6 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     return pending;
   }, [receiptCustomer, invoices, receipts]);
 
-  // 4. Live visualizer: Applies the typed amount, SKIPPING excluded bills!
   const liveAllocation = useMemo(() => {
     const currentPayment = Number(receiptAmount || 0) + Number(receiptDiscount || 0);
     let remainingPayment = currentPayment;
@@ -152,7 +150,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
 
       if (excludedBills.has(bill.id)) {
         status = 'On Hold (Disputed)';
-        allocated = 0; // Completely skip allocation
+        allocated = 0; 
       } else if (remainingPayment >= bill.dueAmount) {
         allocated = bill.dueAmount;
         remainingPayment -= bill.dueAmount;
@@ -167,17 +165,28 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     });
   }, [pendingBills, receiptAmount, receiptDiscount, excludedBills]);
 
-  // Handler to auto-fill the receipt amount to clear up to a specific bill
   const handleClearUpTo = (index) => {
     let totalNeeded = 0;
     for (let i = 0; i <= index; i++) {
-      // Ignore excluded bills when calculating "Clear Up To Here" sum
       if (!excludedBills.has(pendingBills[i].id)) {
         totalNeeded += pendingBills[i].dueAmount;
       }
     }
     setReceiptAmount(totalNeeded.toFixed(2));
-    setReceiptDiscount(0);
+    setReceiptDiscount('');
+  };
+
+  const handlePayOnlyThis = (targetBillId, dueAmount) => {
+    setReceiptAmount(dueAmount.toFixed(2));
+    setReceiptDiscount('');
+    
+    const excludeSet = new Set();
+    pendingBills.forEach(b => {
+      if (b.id !== targetBillId) {
+        excludeSet.add(b.id);
+      }
+    });
+    setExcludedBills(excludeSet);
   };
 
   const toggleExcludeBill = (billId) => {
@@ -194,13 +203,13 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     if (!receiptCustomer) return window.alert("Please select a customer.");
     if (!receiptAmount || Number(receiptAmount) <= 0) return window.alert("Please enter a valid amount.");
     
-    receiptService.create(receiptCustomer.id, receiptAmount, receiptDiscount, receiptMethod, receiptDate, receiptRemarks)
+    receiptService.create(receiptCustomer.id, receiptAmount, receiptDiscount, receiptMethod, receiptDate, receiptRemarks, customReceiptId)
       .then(() => {
         window.alert(`Receipt securely logged! Total Ledger Credit applied for ${receiptCustomer.name}.`);
         loadCustomers(); loadReceipts(); setReceiptCustomer(null);
         setReceiptAmount(''); setReceiptDiscount(''); setReceiptDate(new Date().toISOString().split('T')[0]);
-        setReceiptSearch(''); setReceiptRemarks('Payment received with thanks.');
-        setExcludedBills(new Set()); // Reset exclusions
+        setReceiptSearch(''); setReceiptRemarks('Payment received with thanks.'); setCustomReceiptId('');
+        setExcludedBills(new Set());
       })
       .catch(err => window.alert("Failed to record receipt: " + err.message));
   }
@@ -257,7 +266,12 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                   {isReceiptDropdownOpen && (
                     <ul className="dropdown-menu">
                       {receiptFilteredCustomers.length > 0 ? receiptFilteredCustomers.map(c => (
-                        <li key={c.id} className="dropdown-item" onMouseDown={() => { setReceiptCustomer(c); setReceiptSearch(c.name); setIsReceiptDropdownOpen(false); setExcludedBills(new Set()); }}>
+                        <li key={c.id} className="dropdown-item" onMouseDown={() => { 
+                          setReceiptCustomer(c); 
+                          setReceiptSearch(c.name); 
+                          setIsReceiptDropdownOpen(false); 
+                          setExcludedBills(new Set()); 
+                        }}>
                           <span className="fw-bold">{c.name}</span>
                           <span className="dropdown-location">{c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}</span>
                         </li>
@@ -267,9 +281,15 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                 </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Receipt Date:</label>
-                <input type="date" className="form-control" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} />
+              <div className="sales-control-row sales-control-row-transparent">
+                <div className="form-group w-100">
+                  <label className="form-label">Receipt Date:</label>
+                  <input type="date" className="form-control" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} />
+                </div>
+                <div className="form-group w-100">
+                  <label className="form-label">Receipt No (Handwritten):</label>
+                  <input type="text" className="form-control" value={customReceiptId} onChange={e => setCustomReceiptId(e.target.value)} placeholder="Auto-generated if empty" />
+                </div>
               </div>
 
               <div className="sales-control-row sales-control-row-transparent">
@@ -351,13 +371,10 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                               {bill.status === 'Pending' && <span className="badge bg-slate-200">Pending</span>}
                             </td>
                             <td className="text-center">
-                              <button 
-                                className="btn btn-secondary btn-sm mb-0" 
-                                onClick={() => handleClearUpTo(idx)}
-                                title="Set receipt amount to clear all non-excluded bills up to this one"
-                              >
-                                Clear Up To Here
-                              </button>
+                              <div className="btn-group">
+                                <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleClearUpTo(idx)} title="Clear all non-excluded bills up to this one">Up to Here</button>
+                                <button className="btn btn-primary btn-sm mb-0" onClick={() => handlePayOnlyThis(bill.id, bill.dueAmount)} title="Instantly set payment to clear ONLY this bill">Pay Only This</button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -385,24 +402,38 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
           <div className="card-header header-actions header-actions-wrap">
             <h2 className="card-title mb-0">Master Receipts List</h2>
             <div className="header-filters-group">
-              <input type="text" className="form-control mb-0 search-input-md" placeholder="Search Customer or ID..." value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }} />
+              <input type="text" className="form-control mb-0 search-input-md" placeholder="Search Customer or Receipt No..." value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }} />
               {renderDateFilter()}
             </div>
           </div>
           <div className="table-responsive">
             <table className="block-table data-table">
-              <thead><tr><th>Receipt ID</th><th>Date</th><th>Customer Name</th><th>Amount Received</th><th>Less (Discount)</th><th>Payment Mode</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Receipt No.</th>
+                  <th>Date</th>
+                  <th>Customer Name</th>
+                  <th>Amount Received</th>
+                  <th>Less (Discount)</th>
+                  <th>Total Settled</th>
+                  <th>Payment Mode</th>
+                </tr>
+              </thead>
               <tbody>
-                {paginatedReceipts.length ? paginatedReceipts.map(rec => (
+                {paginatedReceipts.length ? paginatedReceipts.map(rec => {
+                  const settledAmount = Number(rec.amount) + Number(rec.discountAmount || 0);
+                  return (
                   <tr key={rec.id} className="product-row available" onClick={() => setViewingReceipt(rec)} title="Click to view receipt document">
-                    <td className="fw-bold cell-padded">{formatReceiptId(rec.id)}</td>
+                    {/* Shows the custom handwritten ID, falls back to REC-000X if empty */}
+                    <td className="fw-bold cell-padded text-primary">{rec.customReceiptId || formatReceiptId(rec.id)}</td>
                     <td className="cell-padded">{new Date(rec.receiptDate).toLocaleDateString('en-GB')}</td>
                     <td className="fw-bold cell-padded">{rec.customerName}</td>
                     <td className="price-text text-success fw-bold fs-lg cell-padded">{formatMoney(rec.amount)}</td>
                     <td className="cell-padded text-danger fw-bold">{rec.discountAmount > 0 ? formatMoney(rec.discountAmount) : '-'}</td>
+                    <td className="price-text text-slate fw-bold cell-padded">{formatMoney(settledAmount)}</td>
                     <td className="cell-padded"><span className="badge">{rec.paymentMode}</span></td>
                   </tr>
-                )) : <tr><td colSpan={6} className="empty-state">No receipts found for this date range.</td></tr>}
+                )}) : <tr><td colSpan={7} className="empty-state">No receipts found for this date range.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -417,11 +448,23 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
             <h3 className="modal-header-title text-slate">Payment Receipt</h3>
             <div className="receipt-panel bg-white receipt-preview-panel">
               <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
-                <div className="info-block"><span className="info-label">Receipt ID</span><strong className="info-value">{formatReceiptId(viewingReceipt.id)}</strong></div>
+                <div className="info-block">
+                  <span className="info-label">Receipt No.</span>
+                  <strong className="info-value text-primary fs-lg">{viewingReceipt.customReceiptId || formatReceiptId(viewingReceipt.id)}</strong>
+                </div>
                 <div className="info-block mt-1"><span className="info-label">Date</span><strong className="info-value">{new Date(viewingReceipt.receiptDate).toLocaleDateString('en-GB')}</strong></div>
                 <div className="info-block mt-1"><span className="info-label">Customer Name</span><strong className="info-value">{viewingReceipt.customerName}</strong></div>
                 <div className="info-block mt-1"><span className="info-label">Amount Paid</span><strong className="info-value fs-xxl text-success">{formatMoney(viewingReceipt.amount)}</strong></div>
                 {viewingReceipt.discountAmount > 0 && <div className="info-block mt-1"><span className="info-label">Less (Discount)</span><strong className="info-value fs-lg text-danger">- {formatMoney(viewingReceipt.discountAmount)}</strong></div>}
+                
+                {/* NEW: Total Settled Row injected here */}
+                <div className="info-block mt-1 border-top pt-1">
+                  <span className="info-label">Total Settled on Ledger</span>
+                  <strong className="info-value fs-xl text-slate">
+                    {formatMoney(Number(viewingReceipt.amount) + Number(viewingReceipt.discountAmount || 0))}
+                  </strong>
+                </div>
+
                 <div className="info-block mt-1"><span className="info-label">Payment Mode</span><strong className="info-value text-slate">{viewingReceipt.paymentMode}</strong></div>
                 <div className="info-block mt-1"><span className="info-label">Remarks</span><strong className="info-value text-slate">{viewingReceipt.remarks || 'N/A'}</strong></div>
               </div>

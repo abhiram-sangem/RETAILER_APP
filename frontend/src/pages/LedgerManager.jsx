@@ -116,7 +116,8 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
         statement.push({
           sortDate: new Date(rec.receiptDate),
           type: 'Payment Received',
-          ref: formatReceiptId(rec.id),
+          // --- UPDATED: Uses customReceiptId if it exists, otherwise falls back to REC-000X ---
+          ref: rec.customReceiptId || formatReceiptId(rec.id),
           method: rec.paymentMode,
           debit: 0, credit: rec.amount + recDiscount,
           isCashTx: false
@@ -220,9 +221,10 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
           <div className="card-header header-actions header-actions-wrap">
             <h2 className="card-title mb-0">Statement of Account</h2>
             <div className="header-filters-group">
+              {/* FIXED: The input below is now correctly wired to setLedgerSearchQuery */}
               <input 
                 type="text" className="form-control mb-0 search-input-md" placeholder="Search ref, method..." 
-                value={ledgerSearchQuery} onChange={e => setSearchQuery(e.target.value)} 
+                value={ledgerSearchQuery} onChange={e => setLedgerSearchQuery(e.target.value)} 
               />
               {renderDateFilter()}
               <button className="btn btn-secondary" onClick={() => { setViewingCustomerStatement(null); setLedgerPreview(null); setView('ledgers'); }}>Back to Ledgers</button>
@@ -277,7 +279,7 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
                 {ledgerPreview.type === 'receipt' ? (
                   <div className="receipt-panel bg-white receipt-preview-panel">
                     <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
-                      <div className="info-block"><span className="info-label">Receipt ID</span><strong className="info-value">{formatReceiptId(ledgerPreview.data.id)}</strong></div>
+                      <div className="info-block"><span className="info-label">Receipt No.</span><strong className="info-value text-primary fs-lg">{ledgerPreview.data.customReceiptId || formatReceiptId(ledgerPreview.data.id)}</strong></div>
                       <div className="info-block mt-1"><span className="info-label">Date</span><strong className="info-value">{new Date(ledgerPreview.data.receiptDate).toLocaleDateString('en-GB')}</strong></div>
                       <div className="info-block mt-1"><span className="info-label">Amount Paid</span><strong className="info-value fs-xxl text-success">{formatMoney(ledgerPreview.data.amount)}</strong></div>
                       {ledgerPreview.data.discountAmount > 0 && <div className="info-block mt-1"><span className="info-label">Less (Discount)</span><strong className="info-value fs-lg text-danger">- {formatMoney(ledgerPreview.data.discountAmount)}</strong></div>}

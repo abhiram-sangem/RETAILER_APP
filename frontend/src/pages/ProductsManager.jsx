@@ -93,6 +93,7 @@ export default function ProductsManager({ products, loadProducts, loadHistory })
                 <th>Product Name</th>
                 <th>HSN Code</th>
                 <th>Purchase Price</th>
+                <th>MRP</th>
                 <th>Selling Price</th>
                 <th>Actions</th>
               </tr>
@@ -104,6 +105,8 @@ export default function ProductsManager({ products, loadProducts, loadHistory })
                   <td className="fw-bold cell-padded">{product.name}</td>
                   <td className="cell-padded">{product.hsnCode || 'N/A'}</td>
                   <td className="price-text text-warning cell-padded">{formatMoney(product.purchasePrice)}</td>
+                  {/* Updated MRP Column: Solid Slate Color and Bold */}
+                  <td className="fw-bold text-slate cell-padded">{formatMoney(product.mrp || product.price)}</td>
                   <td className="price-text text-success cell-padded">{formatMoney(product.price)}</td>
                   <td className="cell-padded">
                     <div className="btn-group">
@@ -128,7 +131,7 @@ export default function ProductsManager({ products, loadProducts, loadHistory })
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={6} className="empty-state">No products found.</td></tr>
+                <tr><td colSpan={7} className="empty-state">No products found.</td></tr>
               )}
             </tbody>
           </table>
@@ -146,7 +149,8 @@ export default function ProductsManager({ products, loadProducts, loadHistory })
               <div className="info-block"><span className="info-label">Name</span><strong className="info-value">{viewingProduct.name}</strong></div>
               <div className="info-block"><span className="info-label">HSN Code</span><strong className="info-value">{viewingProduct.hsnCode || 'N/A'}</strong></div>
               <div className="info-block"><span className="info-label">Purchase Price</span><strong className="info-value text-warning">{formatMoney(viewingProduct.purchasePrice)}</strong></div>
-              <div className="info-block"><span className="info-label">MRP</span><strong className="info-value text-muted">{formatMoney(viewingProduct.mrp || viewingProduct.price)}</strong></div>
+              {/* Updated Modal MRP View */}
+              <div className="info-block"><span className="info-label">MRP</span><strong className="info-value text-slate">{formatMoney(viewingProduct.mrp || viewingProduct.price)}</strong></div>
               <div className="info-block"><span className="info-label">Selling Price</span><strong className="info-value text-success">{formatMoney(viewingProduct.price)}</strong></div>
               <div className="info-block"><span className="info-label">Current Stock</span><strong className={`info-value ${viewingProduct.stock > 10 ? 'text-success' : 'text-danger'}`}>{viewingProduct.stock} Units</strong></div>
             </div>

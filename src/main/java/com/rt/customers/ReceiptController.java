@@ -1,14 +1,18 @@
 package com.rt.customers;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/receipts")
@@ -28,18 +32,19 @@ public class ReceiptController {
             Long customerId = Long.parseLong(payload.get("customerId").toString());
             Double amount = Double.parseDouble(payload.get("amount").toString());
             
-            // Read the new Discount "Less" Amount (Default to 0 if empty)
             Double discountAmount = payload.containsKey("discountAmount") && payload.get("discountAmount") != null && !payload.get("discountAmount").toString().isEmpty() 
-                ? Double.parseDouble(payload.get("discountAmount").toString()) 
-                : 0.0;
-                
+                 ? Double.parseDouble(payload.get("discountAmount").toString()) 
+                 : 0.0;
+                 
             String paymentMode = (String) payload.get("paymentMode");
             String remarks = (String) payload.get("remarks");
+            
+            // --- CATCH NEW FIELD ---
+            String customReceiptId = (String) payload.get("customReceiptId");
 
             Customer customer = customerRepository.findById(customerId)
                     .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-            // LEDGER LOGIC: Deduct Both the Cash Received AND the Discount!
             customer.setBalance(customer.getBalance() - (amount + discountAmount));
             customerRepository.save(customer);
 
@@ -50,8 +55,8 @@ public class ReceiptController {
             receipt.setDiscountAmount(discountAmount);
             receipt.setPaymentMode(paymentMode);
             receipt.setRemarks(remarks);
-            
-            // Handle Manual Date
+            receipt.setCustomReceiptId(customReceiptId);
+
             String dateStr = (String) payload.get("receiptDate");
             if (dateStr != null && !dateStr.isEmpty()) {
                 receipt.setReceiptDate(LocalDate.parse(dateStr).atStartOfDay());

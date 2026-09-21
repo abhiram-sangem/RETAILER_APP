@@ -9,15 +9,17 @@ import jakarta.persistence.Id;
 
 @Entity
 public class Receipt {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    
+    // --- NEW FIELD ---
+    private String customReceiptId;
 
     private Long customerId;
     private String customerName;
     private Double amount;
-    private Double discountAmount; // To track the "Less" amount
+    private Double discountAmount; 
     private String paymentMode;
     private String remarks;
     private LocalDateTime receiptDate;
@@ -26,6 +28,9 @@ public class Receipt {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    
+    public String getCustomReceiptId() { return customReceiptId; }
+    public void setCustomReceiptId(String customReceiptId) { this.customReceiptId = customReceiptId; }
 
     public Long getCustomerId() { return customerId; }
     public void setCustomerId(Long customerId) { this.customerId = customerId; }

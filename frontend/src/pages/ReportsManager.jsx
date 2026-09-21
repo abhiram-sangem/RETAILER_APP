@@ -342,7 +342,7 @@ export default function ReportsManager({
               
               {/* TOP PRODUCTS */}
               <div className="card flat-dashed-card mb-0" style={{ flex: '1', minWidth: '350px' }}>
-                <h4 className="border-bottom-padded mb-1">🔥 Top 5 Bestselling Products</h4>
+                <h4 className="border-bottom-padded mb-1"> Top 5 Bestselling Products</h4>
                 {filteredData.topProducts.length === 0 ? (
                    <div className="empty-state text-muted">No sales data in this period.</div>
                 ) : (
@@ -363,7 +363,7 @@ export default function ReportsManager({
 
               {/* TOP CUSTOMERS */}
               <div className="card flat-dashed-card mb-0" style={{ flex: '1', minWidth: '350px' }}>
-                <h4 className="border-bottom-padded mb-1">👑 Top 5 Customers by Revenue</h4>
+                <h4 className="border-bottom-padded mb-1"> Top 5 Customers by Revenue</h4>
                 {filteredData.topCustomers.length === 0 ? (
                    <div className="empty-state text-muted">No sales data in this period.</div>
                 ) : (

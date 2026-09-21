@@ -238,11 +238,11 @@ export const historyService = {
 }
 
 export const receiptService = {
-  create: (customerId, amount, discountAmount, paymentMode, receiptDate, remarks) =>
+  create: (customerId, amount, discountAmount, paymentMode, receiptDate, remarks, customReceiptId) =>
     fetch(`${API_URL}/api/receipts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId, amount, discountAmount, paymentMode, receiptDate, remarks })
+      body: JSON.stringify({ customerId, amount, discountAmount, paymentMode, receiptDate, remarks, customReceiptId })
     }).then(async res => {
       if (!res.ok) throw new Error(await res.text() || 'Failed to generate receipt');
       return res.json();

@@ -2,6 +2,7 @@ package com.rt.customers;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,8 +39,6 @@ public class ReceiptController {
                  
             String paymentMode = (String) payload.get("paymentMode");
             String remarks = (String) payload.get("remarks");
-            
-            // --- CATCH NEW FIELD ---
             String customReceiptId = (String) payload.get("customReceiptId");
 
             Customer customer = customerRepository.findById(customerId)
@@ -57,9 +56,18 @@ public class ReceiptController {
             receipt.setRemarks(remarks);
             receipt.setCustomReceiptId(customReceiptId);
 
+            // --- SMART TIMESTAMP LOGIC ---
             String dateStr = (String) payload.get("receiptDate");
             if (dateStr != null && !dateStr.isEmpty()) {
-                receipt.setReceiptDate(LocalDate.parse(dateStr).atStartOfDay());
+                LocalDate parsedDate = LocalDate.parse(dateStr);
+                
+                if (parsedDate.isEqual(LocalDate.now())) {
+                    // If logging for today, use the exact current time
+                    receipt.setReceiptDate(LocalDateTime.now());
+                } else {
+                    // If backdated, set to end-of-day (23:59:59) so it clears after that day's bills
+                    receipt.setReceiptDate(parsedDate.atTime(LocalTime.MAX)); 
+                }
             } else {
                 receipt.setReceiptDate(LocalDateTime.now());
             }

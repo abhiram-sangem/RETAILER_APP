@@ -11,24 +11,31 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
-  const [receiptCustomer, setReceiptCustomer] = useState(null);
+  // Top Level Config
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [receiptSearch, setReceiptSearch] = useState('');
   const [isReceiptDropdownOpen, setIsReceiptDropdownOpen] = useState(false);
-  const [receiptAmount, setReceiptAmount] = useState('');
-  const [receiptDiscount, setReceiptDiscount] = useState('');
   const [receiptMethod, setReceiptMethod] = useState('Cash');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
-  const [receiptRemarks, setReceiptRemarks] = useState('Payment received with thanks.');
   const [customReceiptId, setCustomReceiptId] = useState('');
+  
+  // Global Payment Inputs
+  const [globalAmount, setGlobalAmount] = useState('');
+  const [globalDiscount, setGlobalDiscount] = useState('');
+  const [globalRemarks, setGlobalRemarks] = useState('');
 
-  // Track which bills are excluded/disputed
-  const [excludedBills, setExcludedBills] = useState(new Set());
-
+  // Row-level payment inputs: { [billId]: { amount: '', discount: '' } }
+  const [rowPayments, setRowPayments] = useState({});
   const [viewingReceipt, setViewingReceipt] = useState(null);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, dateFilterRange, startDate, endDate, itemsPerPage]);
+
+  // REACTIVE CUSTOMER LINK: Guarantees the balance is always perfectly in sync
+  const activeCustomer = useMemo(() => {
+    return customers.find(c => c.id === selectedCustomerId) || null;
+  }, [selectedCustomerId, customers]);
 
   const isWithinDateRange = (dateInput) => {
     if (!dateInput) return false;
@@ -101,57 +108,57 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem);
 
   // ============================================================================
-  // 🚀 ADVANCED FIFO PAYMENT ALLOCATION ENGINE 
+  // 🚀 BULLETPROOF REVERSE FIFO ALLOCATION (Math Sync)
+  // Maps the absolute true customer balance onto the newest unpaid bills.
   // ============================================================================
   const pendingBills = useMemo(() => {
-    if (!receiptCustomer) return [];
+    if (!activeCustomer || Number(activeCustomer.balance) <= 0) return [];
     
-    let totalCredits = 0;
-    receipts.forEach(r => {
-      if (r.customerId === receiptCustomer.id || r.customerName === receiptCustomer.name) {
-        totalCredits += (Number(r.amount) + Number(r.discountAmount || 0));
-      }
-    });
-    invoices.forEach(inv => {
-      if (inv.isReturn && inv.customerName === receiptCustomer.name) {
-        totalCredits += Number(inv.finalTotal || inv.totalAmount || 0);
-      }
-    });
-
+    const targetNameNorm = (activeCustomer.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // Sort Pay Later bills NEWEST first
     const payLaterBills = invoices
-      .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && inv.customerName === receiptCustomer.name)
-      .sort((a, b) => new Date(a.orderDate) - new Date(b.orderDate));
+      .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && ((inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === targetNameNorm))
+      .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
 
+    let remainingBalanceToAttribute = Number(activeCustomer.balance);
     const pending = [];
-    payLaterBills.forEach(bill => {
-      let due = Number(bill.finalTotal || bill.totalAmount || 0);
-      
-      if (totalCredits >= due) {
-        totalCredits -= due; 
-      } else if (totalCredits > 0) {
-        due -= totalCredits; 
-        totalCredits = 0;
-        pending.push({ ...bill, dueAmount: due });
+
+    // Loop backwards: Assign the true remaining balance to the newest bills
+    for (const bill of payLaterBills) {
+      if (remainingBalanceToAttribute <= 0) break;
+
+      const originalAmount = Number(bill.finalTotal || bill.totalAmount || 0);
+
+      if (remainingBalanceToAttribute >= originalAmount) {
+        pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: originalAmount });
+        remainingBalanceToAttribute -= originalAmount;
       } else {
-        pending.push({ ...bill, dueAmount: due }); 
+        const prevPaid = originalAmount - remainingBalanceToAttribute;
+        pending.push({ ...bill, originalAmount, previouslyPaid: prevPaid, dueAmount: remainingBalanceToAttribute });
+        remainingBalanceToAttribute = 0;
       }
-    });
+    }
 
-    return pending;
-  }, [receiptCustomer, invoices, receipts]);
+    return pending; // Returns array with NEWEST bill at index 0
+  }, [activeCustomer, invoices]);
 
-  const liveAllocation = useMemo(() => {
-    const currentPayment = Number(receiptAmount || 0) + Number(receiptDiscount || 0);
+  // ============================================================================
+  // 🚀 LIVE GLOBAL AUTO-ALLOCATION
+  // If the user types a global amount, this cascades it from OLDEST to NEWEST
+  // ============================================================================
+  const liveAutoAllocation = useMemo(() => {
+    const currentPayment = Number(globalAmount || 0) + Number(globalDiscount || 0);
     let remainingPayment = currentPayment;
 
-    return pendingBills.map(bill => {
+    // pendingBills is Newest First. We reverse it so we pay the OLDEST first.
+    const reversedPending = [...pendingBills].reverse();
+    
+    const allocatedReversed = reversedPending.map(bill => {
       let allocated = 0;
       let status = 'Pending';
 
-      if (excludedBills.has(bill.id)) {
-        status = 'On Hold (Disputed)';
-        allocated = 0; 
-      } else if (remainingPayment >= bill.dueAmount) {
+      if (remainingPayment >= bill.dueAmount) {
         allocated = bill.dueAmount;
         remainingPayment -= bill.dueAmount;
         status = 'Clearing Now';
@@ -163,56 +170,62 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
 
       return { ...bill, allocated, status };
     });
-  }, [pendingBills, receiptAmount, receiptDiscount, excludedBills]);
 
-  const handleClearUpTo = (index) => {
-    let totalNeeded = 0;
-    for (let i = 0; i <= index; i++) {
-      if (!excludedBills.has(pendingBills[i].id)) {
-        totalNeeded += pendingBills[i].dueAmount;
-      }
-    }
-    setReceiptAmount(totalNeeded.toFixed(2));
-    setReceiptDiscount('');
-  };
+    // Reverse it back so the UI displays Newest First
+    return allocatedReversed.reverse();
+  }, [pendingBills, globalAmount, globalDiscount]);
 
-  const handlePayOnlyThis = (targetBillId, dueAmount) => {
-    setReceiptAmount(dueAmount.toFixed(2));
-    setReceiptDiscount('');
-    
-    const excludeSet = new Set();
-    pendingBills.forEach(b => {
-      if (b.id !== targetBillId) {
-        excludeSet.add(b.id);
-      }
-    });
-    setExcludedBills(excludeSet);
-  };
+  // --- SUBMISSION HANDLERS ---
 
-  const toggleExcludeBill = (billId) => {
-    setExcludedBills(prev => {
-      const next = new Set(prev);
-      if (next.has(billId)) next.delete(billId);
-      else next.add(billId);
-      return next;
-    });
-  };
-  // ============================================================================
+  const submitGlobalPayment = () => {
+    if (!activeCustomer) return window.alert("Please select a customer.");
+    if (!globalAmount || Number(globalAmount) <= 0) return window.alert("Please enter a valid amount.");
 
-  function handleGenerateReceipt() {
-    if (!receiptCustomer) return window.alert("Please select a customer.");
-    if (!receiptAmount || Number(receiptAmount) <= 0) return window.alert("Please enter a valid amount.");
-    
-    receiptService.create(receiptCustomer.id, receiptAmount, receiptDiscount, receiptMethod, receiptDate, receiptRemarks, customReceiptId)
+    const finalRemarks = globalRemarks || 'Auto-allocated payment';
+
+    receiptService.create(activeCustomer.id, globalAmount, globalDiscount, receiptMethod, receiptDate, finalRemarks, customReceiptId)
       .then(() => {
-        window.alert(`Receipt securely logged! Total Ledger Credit applied for ${receiptCustomer.name}.`);
-        loadCustomers(); loadReceipts(); setReceiptCustomer(null);
-        setReceiptAmount(''); setReceiptDiscount(''); setReceiptDate(new Date().toISOString().split('T')[0]);
-        setReceiptSearch(''); setReceiptRemarks('Payment received with thanks.'); setCustomReceiptId('');
-        setExcludedBills(new Set());
+        window.alert(`Payment of ${formatMoney(globalAmount)} successfully applied to ${activeCustomer.name}!`);
+        setGlobalAmount(''); setGlobalDiscount(''); setGlobalRemarks(''); setCustomReceiptId('');
+        loadCustomers(); loadReceipts(); 
       })
       .catch(err => window.alert("Failed to record receipt: " + err.message));
-  }
+  };
+
+  const handleRowInputChange = (billId, field, value) => {
+    setRowPayments(prev => ({
+      ...prev,
+      [billId]: {
+        ...prev[billId],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleFullPaymentClick = (bill) => {
+    handleRowInputChange(bill.id, 'amount', bill.dueAmount.toFixed(2));
+    handleRowInputChange(bill.id, 'discount', '');
+  };
+
+  const submitRowPayment = (bill) => {
+    const inputAmt = Number(rowPayments[bill.id]?.amount || 0);
+    const inputDisc = Number(rowPayments[bill.id]?.discount || 0);
+    const totalRowPayment = inputAmt + inputDisc;
+
+    if (totalRowPayment <= 0) return window.alert("Please enter a payment or discount amount.");
+    if (totalRowPayment > bill.dueAmount) return window.alert(`Cannot pay more than the remaining due amount (${formatMoney(bill.dueAmount)}).`);
+
+    const finalRemarks = `Auto-Allocated to ${formatInvoiceId(bill.id)}`;
+
+    receiptService.create(activeCustomer.id, inputAmt, inputDisc, receiptMethod, receiptDate, finalRemarks, customReceiptId)
+      .then(() => {
+        window.alert(`Payment securely logged specifically against ${formatInvoiceId(bill.id)}!`);
+        setRowPayments(prev => ({ ...prev, [bill.id]: { amount: '', discount: '' } }));
+        setCustomReceiptId('');
+        loadCustomers(); loadReceipts(); 
+      })
+      .catch(err => window.alert("Failed to record receipt: " + err.message));
+  };
 
   function renderPagination(totalItems) {
     const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
@@ -235,163 +248,201 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     );
   }
 
+  const isAutoModeActive = Number(globalAmount) > 0 || Number(globalDiscount) > 0;
+
   return (
     <>
       {/* 1. VIEW: GENERATE RECEIPT */}
       {view === 'receipts' && (
-        <div className="card bg-transparent">
-          <div className="reports-layout" style={{ gap: '20px' }}>
-            
-            {/* Receipt Form Column */}
-            <div className="card mb-0" style={{ flex: '1', minWidth: '400px' }}>
-              <div className="card-header border-bottom-padded mb-1">
-                <h2 className="card-title mb-0">Generate Receipt</h2>
-              </div>
-              <div className="form-group mt-1">
-                <label className="form-label">Select Customer:</label>
-                <div className="dropdown-container">
-                  <input
-                    type="text" className="form-control" placeholder="Search customer name or phone..."
-                    value={receiptSearch} onFocus={() => setIsReceiptDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setIsReceiptDropdownOpen(false), 200)}
-                    onChange={e => { 
-                      setReceiptSearch(e.target.value); 
-                      setIsReceiptDropdownOpen(true); 
-                      setReceiptCustomer(null); 
-                      setReceiptAmount(''); 
-                      setReceiptDiscount('');
-                      setExcludedBills(new Set()); 
-                    }}
-                  />
-                  {isReceiptDropdownOpen && (
-                    <ul className="dropdown-menu">
-                      {receiptFilteredCustomers.length > 0 ? receiptFilteredCustomers.map(c => (
-                        <li key={c.id} className="dropdown-item" onMouseDown={() => { 
-                          setReceiptCustomer(c); 
-                          setReceiptSearch(c.name); 
-                          setIsReceiptDropdownOpen(false); 
-                          setExcludedBills(new Set()); 
-                        }}>
-                          <span className="fw-bold">{c.name}</span>
-                          <span className="dropdown-location">{c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}</span>
-                        </li>
-                      )) : <li className="dropdown-empty">No customers found</li>}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="sales-control-row sales-control-row-transparent">
-                <div className="form-group w-100">
-                  <label className="form-label">Receipt Date:</label>
-                  <input type="date" className="form-control" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} />
-                </div>
-                <div className="form-group w-100">
-                  <label className="form-label">Receipt No (Handwritten):</label>
-                  <input type="text" className="form-control" value={customReceiptId} onChange={e => setCustomReceiptId(e.target.value)} placeholder="Auto-generated if empty" />
-                </div>
-              </div>
-
-              <div className="sales-control-row sales-control-row-transparent">
-                <div className="form-group w-100">
-                  <label className="form-label">Amount Received (₹):</label>
-                  <input type="number" className="form-control fs-xl fw-bold text-success" value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)} placeholder="0.00" />
-                </div>
-                <div className="form-group w-100">
-                  <label className="form-label">Discount / Less (₹):</label>
-                  <input type="number" className="form-control fs-xl fw-bold text-danger" value={receiptDiscount} onChange={e => setReceiptDiscount(e.target.value)} placeholder="0.00" />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Payment Mode:</label>
-                <select className="form-control" value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)}>
-                  <option value="Cash">Cash</option><option value="PhonePe">PhonePe</option><option value="GPay">GPay</option>
-                  <option value="Cheque">Cheque</option><option value="Bank Transfer">Bank Transfer / NEFT</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Remarks / Note:</label>
-                <input type="text" className="form-control" value={receiptRemarks} onChange={e => setReceiptRemarks(e.target.value)} />
-              </div>
-
-              <button className="btn btn-primary w-100 mt-1-5 fs-lg" onClick={handleGenerateReceipt}>Save & Record Payment</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* TOP CONFIG & GLOBAL PAYMENT PANEL */}
+          <div className="card mb-0">
+            <div className="card-header border-bottom-padded mb-1">
+              <h2 className="card-title mb-0">Receipt Configuration</h2>
             </div>
-
-            {/* Live FIFO Allocation Preview Column */}
-            <div className="card mb-0 flat-dashed-card" style={{ flex: '1.5' }}>
-              <div className="card-header border-none pb-0">
-                <h3 className="text-slate mb-0">Live Payment Allocation</h3>
-                <p className="text-muted mt-0-5 mb-0">Payments are automatically applied to the oldest pending bills first.</p>
-              </div>
-              
-              <div className="mt-1-5" style={{ padding: '0 1.5rem' }}>
-                {!receiptCustomer ? (
-                  <div className="empty-state text-muted" style={{ padding: '3rem 1rem' }}>Select a customer to view pending bills.</div>
-                ) : liveAllocation.length === 0 ? (
-                  <div className="empty-state text-success fw-bold" style={{ padding: '3rem 1rem' }}>🎉 This customer has no pending 'Pay Later' bills!</div>
-                ) : (
-                  <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                    <table className="data-table border-none mb-0">
-                      <thead className="sticky-th-light">
-                        <tr>
-                          <th className="text-center">Exclude</th>
-                          <th>Bill Date</th>
-                          <th>Bill No</th>
-                          <th className="text-right">Due Amount</th>
-                          <th className="text-right">Live Allocation</th>
-                          <th className="text-center">Status</th>
-                          <th className="text-center">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {liveAllocation.map((bill, idx) => (
-                          <tr key={bill.id} style={{ 
-                            backgroundColor: bill.status === 'Clearing Now' ? '#f0fdf4' : (bill.status === 'Partial Clear' ? '#fefce8' : (bill.status === 'On Hold (Disputed)' ? '#fef2f2' : 'transparent')),
-                            transition: 'background-color 0.3s'
+            
+            <div className="sales-control-panel bg-transparent p-0 border-none shadow-none mt-1">
+              {/* Row 1: Customer & Settings */}
+              <div className="sales-control-row">
+                <div className="input-group" style={{ flex: 2 }}>
+                  <label className="form-label">Select Customer:</label>
+                  <div className="dropdown-container">
+                    <input
+                      type="text" className="form-control mb-0" placeholder="Search customer name or phone..."
+                      value={receiptSearch} onFocus={() => setIsReceiptDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setIsReceiptDropdownOpen(false), 200)}
+                      onChange={e => { 
+                        setReceiptSearch(e.target.value); 
+                        setIsReceiptDropdownOpen(true); 
+                        setSelectedCustomerId(null); 
+                        setRowPayments({});
+                        setGlobalAmount('');
+                      }}
+                    />
+                    {isReceiptDropdownOpen && (
+                      <ul className="dropdown-menu">
+                        {receiptFilteredCustomers.length > 0 ? receiptFilteredCustomers.map(c => (
+                          <li key={c.id} className="dropdown-item" onMouseDown={() => { 
+                            setSelectedCustomerId(c.id); 
+                            setReceiptSearch(c.name); 
+                            setIsReceiptDropdownOpen(false); 
+                            setRowPayments({});
+                            setGlobalAmount('');
                           }}>
-                            <td className="text-center" style={{ verticalAlign: 'middle' }}>
-                              <input 
-                                type="checkbox" 
-                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                                checked={excludedBills.has(bill.id)}
-                                onChange={() => toggleExcludeBill(bill.id)}
-                                title="Check to exclude this bill from automatic payment deduction"
-                              />
-                            </td>
-                            <td className={`text-muted ${excludedBills.has(bill.id) ? 'text-decoration-line-through' : ''}`}>{new Date(bill.orderDate).toLocaleDateString('en-GB')}</td>
-                            <td className={`fw-bold ${excludedBills.has(bill.id) ? 'text-decoration-line-through text-muted' : ''}`}>{formatInvoiceId(bill.id)}</td>
-                            <td className={`text-right fw-bold ${excludedBills.has(bill.id) ? 'text-muted text-decoration-line-through' : 'text-danger'}`}>{formatMoney(bill.dueAmount)}</td>
-                            <td className="text-right fw-bold text-success">{bill.allocated > 0 ? `+${formatMoney(bill.allocated)}` : '-'}</td>
-                            <td className="text-center">
-                              {bill.status === 'Clearing Now' && <span className="badge btn-success text-white">Clearing</span>}
-                              {bill.status === 'Partial Clear' && <span className="badge btn-warning text-dark">Partial</span>}
-                              {bill.status === 'On Hold (Disputed)' && <span className="badge btn-danger text-white">Held</span>}
-                              {bill.status === 'Pending' && <span className="badge bg-slate-200">Pending</span>}
-                            </td>
-                            <td className="text-center">
-                              <div className="btn-group">
-                                <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleClearUpTo(idx)} title="Clear all non-excluded bills up to this one">Up to Here</button>
-                                <button className="btn btn-primary btn-sm mb-0" onClick={() => handlePayOnlyThis(bill.id, bill.dueAmount)} title="Instantly set payment to clear ONLY this bill">Pay Only This</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            <span className="fw-bold">{c.name}</span>
+                            <span className="dropdown-location">{c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}</span>
+                          </li>
+                        )) : <li className="dropdown-empty">No customers found</li>}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="form-label">Receipt Date:</label>
+                  <input type="date" className="form-control mb-0" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} />
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="form-label">Payment Mode:</label>
+                  <select className="form-control mb-0" value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)}>
+                    <option value="Cash">Cash</option><option value="PhonePe">PhonePe</option><option value="GPay">GPay</option>
+                    <option value="Cheque">Cheque</option><option value="Bank Transfer">Bank Transfer / NEFT</option>
+                  </select>
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="form-label">Receipt No (Optional):</label>
+                  <input type="text" className="form-control mb-0" value={customReceiptId} onChange={e => setCustomReceiptId(e.target.value)} placeholder="Auto-gen if empty" />
+                </div>
+              </div>
+
+              {/* Row 2: Global Amount Inputs */}
+              <div className="sales-control-row mt-1-5 p-1 bg-slate-50 border-light border-radius-md" style={{ border: '1px solid #cbd5e1' }}>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="form-label text-primary fw-bold">Amount Received (₹):</label>
+                  <input type="number" className="form-control mb-0 fs-xl fw-bold text-success" value={globalAmount} onChange={e => setGlobalAmount(e.target.value)} placeholder="0.00" />
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="form-label fw-bold">Discount / Less (₹):</label>
+                  <input type="number" className="form-control mb-0 fs-xl fw-bold text-danger" value={globalDiscount} onChange={e => setGlobalDiscount(e.target.value)} placeholder="0.00" />
+                </div>
+                <div className="input-group" style={{ flex: 2 }}>
+                  <label className="form-label">Remarks / Note:</label>
+                  <input type="text" className="form-control mb-0" value={globalRemarks} onChange={e => setGlobalRemarks(e.target.value)} placeholder="e.g. Account settlement" />
+                </div>
+                <div className="action-buttons-right mt-auto">
+                  <button className="btn btn-primary fs-lg px-2" onClick={submitGlobalPayment} disabled={!isAutoModeActive}>Save Payment</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* BOTTOM FULL WIDTH ALLOCATION TABLE */}
+          <div className="card mb-0">
+            <div className="card-header border-none pb-0">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 className="text-slate mb-0">Invoice Payment Allocation</h3>
+                  <p className="text-muted mt-0-5 mb-0">
+                    {isAutoModeActive 
+                      ? "Auto-Allocation Active: Watch your payment cascade from the oldest bill upwards." 
+                      : "Surgical Mode: Enter a payment amount directly in the row for a specific invoice."}
+                  </p>
+                </div>
+                {activeCustomer && (
+                  <div className="receipt-summary-box p-1 mt-0" style={{ display: 'flex', gap: '20px', alignItems: 'center', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    {isAutoModeActive && (
+                      <div><span className="text-muted fw-bold d-block fs-sm">Total Input:</span><strong className="fs-xl text-success">{formatMoney(Number(globalAmount) + Number(globalDiscount))}</strong></div>
+                    )}
+                    <div style={{ borderLeft: isAutoModeActive ? '1px solid #cbd5e1' : 'none', paddingLeft: isAutoModeActive ? '20px' : '0' }}>
+                      <span className="text-muted fw-bold d-block fs-sm">Total Customer Ledger Due:</span>
+                      <strong className="fs-lg text-danger">{formatMoney(activeCustomer.balance)}</strong>
+                    </div>
                   </div>
                 )}
               </div>
-              
-              <div className="receipt-panel shadow-panel" style={{ marginTop: 'auto', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 8px 8px' }}>
-                <div className="receipt-row receipt-three-col single-col-grid grid-1fr">
-                  <div className="info-block"><span className="info-label">Total Amount Input</span><strong className="info-value fs-xxl text-success">{formatMoney(Number(receiptAmount) + Number(receiptDiscount))}</strong></div>
-                  <div className="info-block mt-1"><span className="info-label">Total Customer Ledger Due</span><strong className="info-value fs-lg text-danger">{receiptCustomer ? formatMoney(receiptCustomer.balance) : '-'}</strong></div>
-                </div>
-              </div>
             </div>
-
+            
+            <div className="mt-1-5">
+              {!activeCustomer ? (
+                <div className="empty-state text-muted" style={{ padding: '3rem 1rem' }}>Select a customer to view pending bills.</div>
+              ) : pendingBills.length === 0 ? (
+                <div className="empty-state text-success fw-bold" style={{ padding: '3rem 1rem' }}>🎉 This customer has no pending 'Pay Later' bills!</div>
+              ) : (
+                <div className="table-responsive" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                  <table className="data-table border-none mb-0 w-100">
+                    <thead className="sticky-th-light">
+                      <tr>
+                        <th>Bill Date</th>
+                        <th>Bill No</th>
+                        <th className="text-right">Bill Total</th>
+                        <th className="text-right">Prev. Paid</th>
+                        <th className="text-right text-danger">Remaining Due</th>
+                        {isAutoModeActive ? (
+                          <>
+                            <th className="text-right text-success">Auto-Allocation</th>
+                            <th className="text-center">Status</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="text-center" style={{ width: '130px' }}>Pay Specific Amount</th>
+                            <th className="text-center" style={{ width: '110px' }}>Discount</th>
+                            <th className="text-center" style={{ width: '160px' }}>Action</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {liveAutoAllocation.map(bill => {
+                        const currentAmt = rowPayments[bill.id]?.amount || '';
+                        const currentDisc = rowPayments[bill.id]?.discount || '';
+                        
+                        return (
+                          <tr key={bill.id} className="available" style={{ 
+                            backgroundColor: bill.status === 'Clearing Now' ? '#f0fdf4' : (bill.status === 'Partial Clear' ? '#fefce8' : 'transparent'),
+                            transition: 'background-color 0.3s'
+                          }}>
+                            <td className="text-muted align-middle">{new Date(bill.orderDate).toLocaleDateString('en-GB')}</td>
+                            <td className="fw-bold align-middle">{formatInvoiceId(bill.id)}</td>
+                            <td className="text-right fw-bold text-slate align-middle">{formatMoney(bill.originalAmount)}</td>
+                            <td className="text-right fw-bold text-warning align-middle">{bill.previouslyPaid > 0 ? formatMoney(bill.previouslyPaid) : '-'}</td>
+                            <td className="text-right fw-bold text-danger align-middle fs-lg">{formatMoney(bill.dueAmount)}</td>
+                            
+                            {isAutoModeActive ? (
+                              <>
+                                <td className="text-right fw-bold text-success fs-lg">{bill.allocated > 0 ? `+${formatMoney(bill.allocated)}` : '-'}</td>
+                                <td className="text-center">
+                                  {bill.status === 'Clearing Now' && <span className="badge btn-success text-white">Clearing</span>}
+                                  {bill.status === 'Partial Clear' && <span className="badge btn-warning text-dark">Partial</span>}
+                                  {bill.status === 'Pending' && <span className="badge bg-slate-200">Pending</span>}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="align-middle">
+                                  <input type="number" className="form-control mb-0 text-success fw-bold text-center" placeholder="0.00" 
+                                    value={currentAmt} onChange={e => handleRowInputChange(bill.id, 'amount', e.target.value)} />
+                                </td>
+                                <td className="align-middle">
+                                  <input type="number" className="form-control mb-0 text-danger fw-bold text-center" placeholder="0.00" 
+                                    value={currentDisc} onChange={e => handleRowInputChange(bill.id, 'discount', e.target.value)} />
+                                </td>
+                                <td className="text-center align-middle">
+                                  <div className="btn-group" style={{ justifyContent: 'center' }}>
+                                    <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleFullPaymentClick(bill)} title="Auto-fill full due">Fill Full</button>
+                                    <button className="btn btn-primary btn-sm mb-0 px-3" onClick={() => submitRowPayment(bill)}>Pay</button>
+                                  </div>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -424,7 +475,6 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                   const settledAmount = Number(rec.amount) + Number(rec.discountAmount || 0);
                   return (
                   <tr key={rec.id} className="product-row available" onClick={() => setViewingReceipt(rec)} title="Click to view receipt document">
-                    {/* Shows the custom handwritten ID, falls back to REC-000X if empty */}
                     <td className="fw-bold cell-padded text-primary">{rec.customReceiptId || formatReceiptId(rec.id)}</td>
                     <td className="cell-padded">{new Date(rec.receiptDate).toLocaleDateString('en-GB')}</td>
                     <td className="fw-bold cell-padded">{rec.customerName}</td>
@@ -457,7 +507,6 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                 <div className="info-block mt-1"><span className="info-label">Amount Paid</span><strong className="info-value fs-xxl text-success">{formatMoney(viewingReceipt.amount)}</strong></div>
                 {viewingReceipt.discountAmount > 0 && <div className="info-block mt-1"><span className="info-label">Less (Discount)</span><strong className="info-value fs-lg text-danger">- {formatMoney(viewingReceipt.discountAmount)}</strong></div>}
                 
-                {/* NEW: Total Settled Row injected here */}
                 <div className="info-block mt-1 border-top pt-1">
                   <span className="info-label">Total Settled on Ledger</span>
                   <strong className="info-value fs-xl text-slate">

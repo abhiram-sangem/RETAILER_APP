@@ -79,9 +79,11 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
 
   const customerStatementData = useMemo(() => {
     if (!viewingCustomerStatement) return [];
+    
+    // Bulletproof matching logic
+    const targetId = String(viewingCustomerStatement.id);
     const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const targetNameNorm = normalizeName(viewingCustomerStatement.name);
-    const targetId = viewingCustomerStatement.id;
     
     let statement = [];
 
@@ -89,7 +91,7 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
       const invNameNorm = normalizeName(inv.customerName);
       if (invNameNorm === targetNameNorm) {
         const isPayLater = inv.paymentMethod === 'Pay Later';
-        const amount = inv.finalTotal || inv.totalAmount || 0;
+        const amount = Number(inv.finalTotal || inv.totalAmount || 0);
         
         let debit = 0; let credit = 0;
         if (!inv.isReturn) {
@@ -111,15 +113,16 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
 
     receipts.forEach(rec => {
       const recNameNorm = normalizeName(rec.customerName);
-      if (rec.customerId === targetId || recNameNorm === targetNameNorm) {
-        const recDiscount = rec.discountAmount || 0;
+      if (String(rec.customerId) === targetId || recNameNorm === targetNameNorm) {
+        const recAmt = Number(rec.amount) || 0;
+        const recDiscount = Number(rec.discountAmount) || 0;
+        
         statement.push({
           sortDate: new Date(rec.receiptDate),
           type: 'Payment Received',
-          // --- UPDATED: Uses customReceiptId if it exists, otherwise falls back to REC-000X ---
           ref: rec.customReceiptId || formatReceiptId(rec.id),
           method: rec.paymentMode,
-          debit: 0, credit: rec.amount + recDiscount,
+          debit: 0, credit: recAmt + recDiscount,
           isCashTx: false
         });
       }
@@ -162,7 +165,7 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
   function handleLedgerRowClick(row) {
     const parsedId = parseInt(row.ref.replace(/[^0-9]/g, ''), 10);
     if (row.type === 'Payment Received') {
-      const rec = receipts.find(r => r.id === parsedId);
+      const rec = receipts.find(r => r.id === parsedId || r.customReceiptId === row.ref);
       if (rec) setLedgerPreview({ type: 'receipt', data: rec });
     } else {
       invoiceService.getInvoiceById(parsedId).then(data => {
@@ -221,7 +224,6 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
           <div className="card-header header-actions header-actions-wrap">
             <h2 className="card-title mb-0">Statement of Account</h2>
             <div className="header-filters-group">
-              {/* FIXED: The input below is now correctly wired to setLedgerSearchQuery */}
               <input 
                 type="text" className="form-control mb-0 search-input-md" placeholder="Search ref, method..." 
                 value={ledgerSearchQuery} onChange={e => setLedgerSearchQuery(e.target.value)} 

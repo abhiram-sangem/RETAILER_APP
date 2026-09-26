@@ -15,28 +15,37 @@ public class Product {
     private String name;
     private String hsnCode;
     private Double purchasePrice;
-    private Double mrp; // --- NEW MRP FIELD ---
+    private Double mrp; 
     private Double price;
-    private Integer stock;
+    
+    // --- CHANGED TO DOUBLE FOR FRACTIONAL STOCK ---
+    private Double stock;
+
+    // --- NEW PIECE PRICING FIELDS ---
+    private Integer piecesPerBox;
+    private Double piecePurchasePrice;
+    private Double pieceMrp;
+    private Double piecePrice;
 
     public Product() {}
 
-    public Product(String name, Double price, Integer stock) {
+    public Product(String name, Double price, Double stock) {
         this.name = name;
         this.price = price;
         this.stock = stock;
         this.purchasePrice = 0.0;
-        this.mrp = price; // Default MRP to Selling Price
+        this.mrp = price; 
         this.hsnCode = "N/A";
     }
 
-    public Product(String name, String hsnCode, Double purchasePrice, Double mrp, Double price, Integer stock) {
+    public Product(String name, String hsnCode, Double purchasePrice, Double mrp, Double price, Double stock, Integer piecesPerBox) {
         this.name = name;
         this.hsnCode = hsnCode;
         this.purchasePrice = purchasePrice;
         this.mrp = mrp;
         this.price = price;
         this.stock = stock;
+        this.piecesPerBox = piecesPerBox;
     }
 
     // Getters and Setters
@@ -58,6 +67,18 @@ public class Product {
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
 
-    public Integer getStock() { return stock; }
-    public void setStock(Integer stock) { this.stock = stock; }
+    public Double getStock() { return stock; }
+    public void setStock(Double stock) { this.stock = stock; }
+
+    public Integer getPiecesPerBox() { return piecesPerBox; }
+    public void setPiecesPerBox(Integer piecesPerBox) { this.piecesPerBox = piecesPerBox; }
+
+    public Double getPiecePurchasePrice() { return piecePurchasePrice; }
+    public void setPiecePurchasePrice(Double piecePurchasePrice) { this.piecePurchasePrice = piecePurchasePrice; }
+
+    public Double getPieceMrp() { return pieceMrp; }
+    public void setPieceMrp(Double pieceMrp) { this.pieceMrp = pieceMrp; }
+
+    public Double getPiecePrice() { return piecePrice; }
+    public void setPiecePrice(Double piecePrice) { this.piecePrice = piecePrice; }
 }

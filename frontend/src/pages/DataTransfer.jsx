@@ -3,11 +3,12 @@ import * as XLSX from 'xlsx';
 import { formatProductId } from '../utils/formatters';
 import { customerService, productService } from '../services/api';
 
-export default function DataTransfer({ customers, products, loadCustomers, loadProducts, loadHistory }) {
+export default function Reports({ customers, products, loadCustomers, loadProducts, loadHistory }) {
 
   const handleImportCustomers = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -54,6 +55,7 @@ export default function DataTransfer({ customers, products, loadCustomers, loadP
   const handleImportProducts = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -76,7 +78,12 @@ export default function DataTransfer({ customers, products, loadCustomers, loadP
             purchasePrice: Number(row['purchase price'] || row['Purchase Price'] || row.purchasePrice) || 0,
             mrp: Number(row.MRP || row.mrp) || 0,
             price: Number(row['sales price'] || row['Selling Price'] || row.price) || 0,
-            stock: Number(row['In Stock'] || row.Stock || row.stock) || 0
+            stock: Number(row['In Stock'] || row.Stock || row.stock) || 0,
+            // New Piece Logic parsed from Excel
+            piecesPerBox: Number(row['Pieces Per Box'] || row.piecesPerBox) || 0,
+            piecePurchasePrice: Number(row['Piece Purchase Price'] || row.piecePurchasePrice) || 0,
+            pieceMrp: Number(row['Piece MRP'] || row.pieceMrp) || 0,
+            piecePrice: Number(row['Piece Selling Price'] || row.piecePrice) || 0,
           }
         });
 
@@ -96,19 +103,21 @@ export default function DataTransfer({ customers, products, loadCustomers, loadP
     if (products.length === 0) return window.alert("No products to export.");
     const dataToExport = products.map(p => ({
       'Product ID': formatProductId(p.id), 'Name': p.name, 'HSN Code': p.hsnCode,
-      'Purchase Price': p.purchasePrice, 'MRP': p.mrp || p.price, 'Selling Price': p.price, 'Stock': p.stock
+      'Purchase Price': p.purchasePrice, 'MRP': p.mrp || p.price, 'Selling Price': p.price, 'In Stock (Boxes)': p.stock,
+      'Pieces Per Box': p.piecesPerBox || '', 'Piece Purchase Price': p.piecePurchasePrice || '',
+      'Piece MRP': p.pieceMrp || '', 'Piece Selling Price': p.piecePrice || ''
     }));
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
-    XLSX.writeFile(wb, `Products_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Products_Inventory_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
     <div className="card bg-transparent">
       <div className="reports-layout">
         <div className="card mb-0">
-          <div className="card-header"><h2 className="card-title">Customer Database</h2></div>
+          <div className="card-header"><h2 className="card-title">Customer Data Transfer</h2></div>
           <div className="dashboard-stats-grid single-col mt-1">
             <div className="card stat-card report-card report-card-export">
               <h4>Export Customers</h4>
@@ -118,8 +127,8 @@ export default function DataTransfer({ customers, products, loadCustomers, loadP
               </div>
             </div>
             <div className="card stat-card report-card report-card-import">
-              <h4>Import & Update Customers</h4>
-              <p className="text-muted mb-1-5">Upload Excel file to add new customers or update existing ones (matches by Phone/Name).</p>
+              <h4>Import Customers</h4>
+              <p className="text-muted mb-1-5">Upload Excel file to add new customers or update existing ones (matches by Phone Number or Name).</p>
               <div className="mt-auto">
                 <input type="file" id="excel-upload-customers" accept=".xlsx, .xls" className="d-none" onChange={handleImportCustomers} />
                 <label htmlFor="excel-upload-customers" className="btn btn-success w-100 d-block cursor-pointer">Select Excel File</label>
@@ -129,18 +138,18 @@ export default function DataTransfer({ customers, products, loadCustomers, loadP
         </div>
 
         <div className="card mb-0">
-          <div className="card-header"><h2 className="card-title">Product Database</h2></div>
+          <div className="card-header"><h2 className="card-title">Inventory Data Transfer</h2></div>
           <div className="dashboard-stats-grid single-col mt-1">
             <div className="card stat-card report-card report-card-export-prod">
               <h4>Export Products</h4>
-              <p className="text-muted mb-1-5">Download a complete list of your products, prices, and current stock levels.</p>
+              <p className="text-muted mb-1-5">Download a complete list of your products, box prices, piece prices, and stock levels.</p>
               <div className="mt-auto">
                 <button className="btn btn-warning w-100" onClick={handleExportProducts}>Download Excel Backup</button>
               </div>
             </div>
             <div className="card stat-card report-card report-card-import-prod">
-              <h4>Import & Update Products</h4>
-              <p className="text-muted mb-1-5">Upload Excel file to add new products or update prices/stock (matches by ID/Name).</p>
+              <h4>Import Products</h4>
+              <p className="text-muted mb-1-5">Upload Excel file to add new products or update prices/stock (matches by Product ID or Name).</p>
               <div className="mt-auto">
                 <input type="file" id="excel-upload-products" accept=".xlsx, .xls" className="d-none" onChange={handleImportProducts} />
                 <label htmlFor="excel-upload-products" className="btn btn-purple w-100 d-block cursor-pointer">Select Excel File</label>

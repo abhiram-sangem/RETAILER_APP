@@ -57,11 +57,8 @@ public class PurchaseInvoiceController {
         try {
             PurchaseInvoice invoice = new PurchaseInvoice();
             invoice.setSellerName((String) payload.get("sellerName"));
-            
-            // --- CATCHING NEW VENDOR DATA ---
             invoice.setSellerPhone((String) payload.get("sellerPhone"));
             invoice.setSellerGst((String) payload.get("sellerGst"));
-
             invoice.setCustomInvoiceId((String) payload.get("customInvoiceId"));
             
             String dateStr = (String) payload.get("purchaseDate");
@@ -81,13 +78,23 @@ public class PurchaseInvoiceController {
 
             for (Map<String, Object> itemData : itemsData) {
                 Long productId = Long.parseLong(itemData.get("productId").toString());
-                int quantity = Integer.parseInt(itemData.get("quantity").toString());
+                Double quantity = Double.parseDouble(itemData.get("quantity").toString());
                 Double purchasePrice = Double.parseDouble(itemData.get("purchasePrice").toString());
+                
+                // 1. Intercept sellType
+                String sellType = itemData.get("sellType") != null ? itemData.get("sellType").toString() : "Box";
 
                 Product product = productRepository.findById(productId)
                         .orElseThrow(() -> new RuntimeException("Product not found"));
 
-                product.setStock(product.getStock() + quantity);
+                // 2. Calculate true fractional stock impact
+                Double stockImpact = quantity;
+                if ("Piece".equalsIgnoreCase(sellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockImpact = quantity / product.getPiecesPerBox();
+                }
+
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                product.setStock(currentStock + stockImpact);
                 product.setPurchasePrice(purchasePrice);
                 productRepository.save(product);
 
@@ -95,15 +102,16 @@ public class PurchaseInvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE");
-                log.setQuantityChanged(quantity); 
+                log.setQuantityChanged(stockImpact); 
                 log.setFinalStock(product.getStock());
-                log.setDescription("Vendor Purchase from " + invoice.getSellerName());
+                log.setDescription("Vendor Purchase (" + quantity + " " + sellType + "s) from " + invoice.getSellerName());
                 log.setTimestamp(LocalDateTime.now());
                 inventoryHistoryRepository.save(log);
 
                 PurchaseInvoiceItem item = new PurchaseInvoiceItem();
                 item.setProduct(product);
-                item.setQuantity(quantity);
+                item.setQuantity(quantity); 
+                item.setSellType(sellType); // Save to DB
                 item.setPurchasePrice(purchasePrice);
                 item.setPurchaseInvoice(invoice);
                 items.add(item);
@@ -128,9 +136,10 @@ public class PurchaseInvoiceController {
             StringBuilder oldItemsJson = new StringBuilder("[");
             for (int i = 0; i < existingInvoice.getItems().size(); i++) {
                 PurchaseInvoiceItem oldItem = existingInvoice.getItems().get(i);
-                oldItemsJson.append(String.format("{\"name\":\"%s\", \"qty\":%d, \"price\":%.2f}",
+                oldItemsJson.append(String.format("{\"name\":\"%s\", \"qty\":%s, \"unit\":\"%s\", \"price\":%.2f}",
                         oldItem.getProduct().getName().replace("\"", "\\\""),
-                        oldItem.getQuantity(),
+                        String.valueOf(oldItem.getQuantity()),
+                        oldItem.getSellType() != null ? oldItem.getSellType() : "Box",
                         oldItem.getPurchasePrice()));
                 if (i < existingInvoice.getItems().size() - 1) oldItemsJson.append(",");
             }
@@ -138,16 +147,26 @@ public class PurchaseInvoiceController {
 
             Double oldFinalTotal = existingInvoice.getFinalTotal();
 
+            // REVERT OLD STOCK (Using fractional math)
             for (PurchaseInvoiceItem oldItem : existingInvoice.getItems()) {
                 Product product = oldItem.getProduct();
-                product.setStock(product.getStock() - oldItem.getQuantity());
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                Double itemQuantity = oldItem.getQuantity() != null ? oldItem.getQuantity() : 0.0;
+                String oldSellType = oldItem.getSellType() != null ? oldItem.getSellType() : "Box";
+                
+                Double stockImpact = itemQuantity;
+                if ("Piece".equalsIgnoreCase(oldSellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockImpact = itemQuantity / product.getPiecesPerBox();
+                }
+                
+                product.setStock(currentStock - stockImpact);
                 productRepository.save(product);
 
                 InventoryHistory log = new InventoryHistory();
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE_EDIT_REVERT");
-                log.setQuantityChanged(-oldItem.getQuantity());
+                log.setQuantityChanged(-stockImpact);
                 log.setFinalStock(product.getStock());
                 log.setDescription("Reverting Purchase Invoice Edit #" + existingInvoice.getId());
                 log.setTimestamp(LocalDateTime.now());
@@ -156,11 +175,8 @@ public class PurchaseInvoiceController {
 
             existingInvoice.getItems().clear();
             existingInvoice.setSellerName((String) payload.get("sellerName"));
-            
-            // --- CATCHING NEW VENDOR DATA ---
             existingInvoice.setSellerPhone((String) payload.get("sellerPhone"));
             existingInvoice.setSellerGst((String) payload.get("sellerGst"));
-
             existingInvoice.setCustomInvoiceId((String) payload.get("customInvoiceId"));
             
             String dateStr = (String) payload.get("purchaseDate");
@@ -177,16 +193,24 @@ public class PurchaseInvoiceController {
             List<Map<String, Object>> itemsData = (List<Map<String, Object>>) payload.get("items");
             StringBuilder newItemsJson = new StringBuilder("[");
 
+            // APPLY NEW STOCK
             for (int i = 0; i < itemsData.size(); i++) {
                 Map<String, Object> itemData = itemsData.get(i);
                 Long productId = Long.parseLong(itemData.get("productId").toString());
-                int quantity = Integer.parseInt(itemData.get("quantity").toString());
+                Double quantity = Double.parseDouble(itemData.get("quantity").toString());
                 Double purchasePrice = Double.parseDouble(itemData.get("purchasePrice").toString());
+                String sellType = itemData.get("sellType") != null ? itemData.get("sellType").toString() : "Box";
 
                 Product product = productRepository.findById(productId)
                         .orElseThrow(() -> new RuntimeException("Product not found"));
 
-                product.setStock(product.getStock() + quantity);
+                Double stockImpact = quantity;
+                if ("Piece".equalsIgnoreCase(sellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockImpact = quantity / product.getPiecesPerBox();
+                }
+
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                product.setStock(currentStock + stockImpact);
                 product.setPurchasePrice(purchasePrice);
                 productRepository.save(product);
 
@@ -194,7 +218,7 @@ public class PurchaseInvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("PURCHASE_EDIT_APPLY");
-                log.setQuantityChanged(quantity); 
+                log.setQuantityChanged(stockImpact); 
                 log.setFinalStock(product.getStock());
                 log.setDescription("Applying Edit to Purchase Invoice #" + existingInvoice.getId());
                 log.setTimestamp(LocalDateTime.now());
@@ -202,14 +226,16 @@ public class PurchaseInvoiceController {
 
                 PurchaseInvoiceItem item = new PurchaseInvoiceItem();
                 item.setProduct(product);
-                item.setQuantity(quantity);
+                item.setQuantity(quantity); 
+                item.setSellType(sellType);
                 item.setPurchasePrice(purchasePrice);
                 item.setPurchaseInvoice(existingInvoice);
                 existingInvoice.getItems().add(item);
 
-                newItemsJson.append(String.format("{\"name\":\"%s\", \"qty\":%d, \"price\":%.2f}",
+                newItemsJson.append(String.format("{\"name\":\"%s\", \"qty\":%s, \"unit\":\"%s\", \"price\":%.2f}",
                         product.getName().replace("\"", "\\\""),
-                        quantity,
+                        String.valueOf(quantity),
+                        sellType,
                         purchasePrice));
                 if (i < itemsData.size() - 1) newItemsJson.append(",");
             }

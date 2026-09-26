@@ -54,9 +54,20 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
         <button className={`nav-item ${['ledgers', 'ledger-statement'].includes(view) ? 'active' : ''}`} onClick={() => setView('ledgers')}>Ledgers</button>
         <button className={`nav-item ${view === 'customers-manage' ? 'active' : ''}`} onClick={() => setView('customers-manage')}>Customers</button>
         <button className={`nav-item ${view === 'products' ? 'active' : ''}`} onClick={() => setView('products')}>Products</button>
-        <button className={`nav-item ${view === 'reports' ? 'active' : ''}`} onClick={() => setView('reports')}>Reports</button>
-        <button className={`nav-item ${view === 'data-transfer' ? 'active' : ''}`} onClick={() => setView('data-transfer')}>Data Transfer</button>
-        <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>Settings</button>
+        
+        {/* NEW "MORE" DROPDOWN */}
+        <div className="nav-dropdown">
+          <button className={`nav-item ${['reports', 'data-transfer', 'settings', 'collections'].includes(view) ? 'active' : ''}`}>
+            More ▼
+          </button>
+          <div className="nav-dropdown-content">
+            <button className="nav-dropdown-item" onClick={() => setView('collections')}>Collection</button>
+            <button className="nav-dropdown-item" onClick={() => setView('reports')}>Reports</button>
+            <button className="nav-dropdown-item" onClick={() => setView('data-transfer')}>Data Transfer</button>
+            <button className="nav-dropdown-item" onClick={() => setView('settings')}>Settings</button>
+          </div>
+        </div>
+
       </nav>
       
       <button className="btn btn-danger logout-btn" onClick={onLogout}>

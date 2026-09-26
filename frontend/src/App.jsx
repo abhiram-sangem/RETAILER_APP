@@ -19,11 +19,12 @@ import InventoryManager from './pages/InventoryManager';
 import InvoiceBuilder from './pages/InvoiceBuilder';
 import SettingsManager from './pages/SettingsManager';
 import VendorManager from './pages/VendorManager';
+import CollectionPlanner from './pages/CollectionPlanner';
 
 // --- API ---
 import { 
   productService, invoiceService, customerService, 
-  purchaseInvoiceService, historyService, receiptService,vendorService
+  purchaseInvoiceService, historyService, receiptService, vendorService
 } from './services/api';
 
 export default function App() {
@@ -153,7 +154,6 @@ export default function App() {
           <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} loadCustomers={loadCustomers} loadReceipts={loadReceipts} />
         )}
 
-        {/* REPORTS */}
         {/* DATA TRANSFER */}
         {view === 'data-transfer' && (
           <DataTransfer customers={customers} products={products} loadCustomers={loadCustomers} loadProducts={loadProducts} loadHistory={loadHistory} />
@@ -172,6 +172,11 @@ export default function App() {
         {/* VENDOR MANAGEMENT */}
         {view === 'vendors-manage' && (
           <VendorManager vendors={vendors} loadVendors={loadVendors} />
+        )}
+
+        {/* ROUTE COLLECTION PLANNER */}
+        {view === 'collections' && (
+          <CollectionPlanner customers={customers} invoices={invoices} />
         )}
 
       </main>

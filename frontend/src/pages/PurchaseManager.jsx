@@ -100,7 +100,11 @@ export default function PurchaseManager({
   ); 
 
   const purchaseBillingDetails = useMemo(() => { 
-    const subtotal = purchaseCart.reduce((sum, item) => sum + (item.purchasePrice || 0) * (Number(item.quantity) || 0), 0); 
+    // UPDATED: Dynamic calculation based on Box vs Piece
+    const subtotal = purchaseCart.reduce((sum, item) => {
+      const currentPrice = item.sellType === 'Piece' ? item.piecePurchasePrice : item.purchasePrice;
+      return sum + (currentPrice || 0) * (Number(item.quantity) || 0);
+    }, 0); 
     const discountAmount = subtotal * (purchaseDiscountPercent / 100); 
     const taxableAmount = subtotal - discountAmount; 
     const cgstPercent = purchaseTaxPercent / 2; 
@@ -143,13 +147,11 @@ export default function PurchaseManager({
   // MERGE VENDORS + HISTORICAL PURCHASES FOR DROPDOWN
   const allSellers = useMemo(() => {
     const sellerMap = new Map();
-    // 1. Add historical names from past bills
     (purchaseInvoices || []).forEach(inv => {
         if (inv.sellerName && !sellerMap.has(inv.sellerName)) {
             sellerMap.set(inv.sellerName, { id: `hist-${inv.id}`, name: inv.sellerName, city: 'Legacy Entry' });
         }
     });
-    // 2. Add registered vendors (overwrites legacy if name matches, bringing in city details)
     (vendors || []).forEach(v => {
         if (v.name) sellerMap.set(v.name, { ...v });
     });
@@ -212,9 +214,17 @@ export default function PurchaseManager({
   // --- HANDLERS --- 
   function addToPurchaseCart(product) { 
     setPurchaseCart(current => { 
-      const existing = current.find(item => item.id === product.id) 
-      if (existing) return current.map(item => item.id === product.id ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } : item) 
-      return [...current, { ...product, quantity: 1, purchasePrice: product.purchasePrice || 0 }] 
+      // UPDATED: Check for existing item matching Box sellType
+      const existingIndex = current.findIndex(item => item.id === product.id && item.sellType === 'Box');
+      let newCart = [...current];
+      
+      if (existingIndex >= 0) {
+        const existing = newCart[existingIndex];
+        newCart[existingIndex] = { ...existing, quantity: (Number(existing.quantity) || 0) + 1 };
+      } else {
+        newCart.push({ ...product, quantity: 1, purchasePrice: product.purchasePrice || 0, sellType: 'Box' });
+      }
+      return newCart;
     }); 
   }
 
@@ -223,13 +233,28 @@ export default function PurchaseManager({
       if (val === '') return current.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm) 
       const quantity = Number(val) 
       if (quantity < 0) return current 
+      // We don't block excessive quantity on purchase since vendor is adding to our stock
       return current.map((itm, idx) => idx === index ? { ...itm, quantity } : itm) 
     }); 
   }
 
+  function updatePurchaseSellType(index, newType) {
+    setPurchaseCart(current => {
+      const newCart = [...current];
+      newCart[index] = { ...newCart[index], sellType: newType, quantity: 1 };
+      return newCart;
+    });
+  }
+
   function updatePurchasePrice(index, price) { 
     if (price < 0) return 
-    setPurchaseCart(current => current.map((itm, idx) => idx === index ? { ...itm, purchasePrice: price } : itm)); 
+    setPurchaseCart(current => current.map((itm, idx) => {
+      if (idx === index) {
+        // Updates the correct field depending on whether Box or Piece is currently selected
+        return itm.sellType === 'Piece' ? { ...itm, piecePurchasePrice: price } : { ...itm, purchasePrice: price };
+      }
+      return itm;
+    })); 
   }
 
   function removePurchaseCartItem(index) { 
@@ -245,9 +270,15 @@ export default function PurchaseManager({
   }
 
   function submitPurchaseCart() { 
+    // Format payload to send the exact piece purchase price if applicable
+    const processedCartPayload = purchaseCart.map(item => ({
+      ...item,
+      purchasePrice: item.sellType === 'Piece' ? item.piecePurchasePrice : item.purchasePrice
+    }));
+
     if (editingPurchaseInvoiceId) { 
       purchaseInvoiceService.update( 
-        editingPurchaseInvoiceId, purchaseSellerName, purchaseDate, customInvoiceId, purchaseCart, 
+        editingPurchaseInvoiceId, purchaseSellerName, purchaseDate, customInvoiceId, processedCartPayload, 
         purchaseBillingDetails.subtotal, purchaseDiscountPercent, purchaseBillingDetails.cgst, 
         purchaseBillingDetails.sgst, purchaseBillingDetails.finalTotal, null, null 
       ).then(() => { 
@@ -255,7 +286,7 @@ export default function PurchaseManager({
       }).catch(err => window.alert('Failed to update purchase. ' + err.message)); 
     } else { 
       purchaseInvoiceService.create( 
-        purchaseSellerName, purchaseDate, customInvoiceId, purchaseCart, 
+        purchaseSellerName, purchaseDate, customInvoiceId, processedCartPayload, 
         purchaseBillingDetails.subtotal, purchaseDiscountPercent, purchaseBillingDetails.cgst, 
         purchaseBillingDetails.sgst, purchaseBillingDetails.finalTotal, null, null 
       ).then(() => { 
@@ -300,8 +331,13 @@ export default function PurchaseManager({
     
     setPurchaseTaxPercent(Math.round(totalTaxPercent)); 
     setPurchaseCart(invoice.items.map(item => ({ 
-      ...item.product, id: item.product?.id || item.id, name: item.product?.name || item.name || 'Unknown Product', 
-      purchasePrice: item.purchasePrice, quantity: item.quantity, originalQuantity: item.quantity 
+      ...item.product, 
+      id: item.product?.id || item.id, 
+      name: item.product?.name || item.name || 'Unknown Product', 
+      purchasePrice: item.purchasePrice, 
+      quantity: item.quantity, 
+      originalQuantity: item.quantity,
+      sellType: item.sellType || 'Box' 
     }))); 
     setView('purchase-new'); 
   }
@@ -376,29 +412,52 @@ export default function PurchaseManager({
               <button className="btn btn-primary" onClick={() => { setSearchQuery(''); setShowAddPurchaseProductModal(true); }}>+ Add Products</button> 
             </div> 
           </div> 
+          
           <div className="table-responsive"> 
             <table className="data-table"> 
               <thead> 
-                <tr><th>S.No</th><th>Product</th><th>Buy Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr> 
+                <tr><th>S.No</th><th>Product</th><th>Unit</th><th>Buy Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr> 
               </thead> 
               <tbody> 
-                {purchaseCart.length ? purchaseCart.map((item, idx) => ( 
-                  <tr key={idx}> 
-                    <td className="fw-bold">{idx + 1}</td> 
-                    <td><span className="product-name-large">{item.name || 'Unknown Product'}</span></td> 
-                    <td> 
-                      <input type="number" className="form-control mb-0 w-100" min="0" step="0.01" value={item.purchasePrice} onChange={e => updatePurchasePrice(idx, Number(e.target.value))} /> 
-                    </td> 
-                    <td> 
-                      <input type="number" className="quantity-input form-control mb-0 qty-input-large" min="1" value={item.quantity} onChange={e => updatePurchaseQuantity(idx, e.target.value)} onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updatePurchaseQuantity(idx, 1); }} /> 
-                    </td> 
-                    <td className="price-text text-warning">{formatMoney((item.purchasePrice || 0) * (Number(item.quantity) || 0))}</td> 
-                    <td><button className="btn btn-danger" onClick={() => removePurchaseCartItem(idx)}>Remove</button></td> 
-                  </tr> 
-                )) : <tr><td colSpan={6} className="empty-state">Purchase cart is empty.</td></tr>} 
+                {purchaseCart.length ? purchaseCart.map((item, idx) => {
+                  const currentPrice = item.sellType === 'Piece' ? item.piecePurchasePrice : item.purchasePrice;
+                  const hasPiecesConfigured = Number(item.piecesPerBox) > 0;
+                  
+                  return ( 
+                    <tr key={idx}> 
+                      <td className="fw-bold">{idx + 1}</td> 
+                      <td><span className="product-name-large">{item.name || 'Unknown Product'}</span></td> 
+                      
+                      {/* UPDATED: Box/Piece Toggle for Purchasing */}
+                      <td>
+                        <select 
+                          className="form-control mb-0" 
+                          style={{width: '90px', padding: '5px', cursor: hasPiecesConfigured ? 'pointer' : 'not-allowed'}}
+                          value={item.sellType || 'Box'} 
+                          onChange={e => updatePurchaseSellType(idx, e.target.value)}
+                          disabled={!hasPiecesConfigured}
+                          title={!hasPiecesConfigured ? "Update this product in Inventory to set Pieces Per Box before buying by Piece" : ""}
+                        >
+                          <option value="Box">Box</option>
+                          {hasPiecesConfigured && <option value="Piece">Piece</option>}
+                        </select>
+                      </td>
+
+                      <td> 
+                        <input type="number" className="form-control mb-0 w-100" min="0" step="0.01" value={currentPrice || ''} onChange={e => updatePurchasePrice(idx, Number(e.target.value))} /> 
+                      </td> 
+                      <td> 
+                        <input type="number" className="quantity-input form-control mb-0 qty-input-large" min="1" value={item.quantity} onChange={e => updatePurchaseQuantity(idx, e.target.value)} onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updatePurchaseQuantity(idx, 1); }} /> 
+                      </td> 
+                      <td className="price-text text-warning">{formatMoney((currentPrice || 0) * (Number(item.quantity) || 0))}</td> 
+                      <td><button className="btn btn-danger" onClick={() => removePurchaseCartItem(idx)}>Remove</button></td> 
+                    </tr> 
+                  )
+                }) : <tr><td colSpan={7} className="empty-state">Purchase cart is empty.</td></tr>} 
               </tbody> 
             </table> 
           </div> 
+          
           {purchaseCart.length > 0 && ( 
             <div className="modal-actions mt-2"> 
               <button className="btn btn-secondary p-1" onClick={cancelPurchase}>Cancel Purchase</button> 
@@ -496,12 +555,13 @@ export default function PurchaseManager({
           <h4 className="section-title-spacing">Items Received</h4> 
           <div className="table-responsive table-margin-bottom"> 
             <table className="data-table"> 
-              <thead><tr><th>S.No</th><th>Product</th><th>Buy Price</th><th>Qty</th><th>Total</th></tr></thead> 
+              <thead><tr><th>S.No</th><th>Product</th><th>Unit</th><th>Buy Price</th><th>Qty</th><th>Total</th></tr></thead> 
               <tbody> 
                 {selectedPurchaseInvoice.items?.map((item, idx) => ( 
                   <tr key={idx}> 
                     <td className="fw-bold">{idx + 1}</td> 
                     <td><span className="product-name-large">{item.product?.name || item.name || 'Unknown Product'}</span></td> 
+                    <td className="fw-bold text-slate">{item.sellType || 'Box'}</td>
                     <td>{formatMoney(item.purchasePrice)}</td> 
                     <td className="fw-bold fs-lg">{item.quantity}</td> 
                     <td className="price-text text-warning">{formatMoney(item.purchasePrice * item.quantity)}</td> 
@@ -606,7 +666,7 @@ export default function PurchaseManager({
       {/* --- MODAL: Add Product To Purchase Cart --- */} 
       {showAddPurchaseProductModal && ( 
         <div className="modal-overlay no-print"> 
-          <div className="modal-content" style={{ maxWidth: '1000px', width: '95%', height: '90vh', display: 'flex', flexDirection: 'column', padding: '1.5rem' }}> 
+          <div className="modal-content" style={{ maxWidth: '1000px', width: '95%', height: '90vh', display: 'flex', flexDirection: 'column', padding: '1.5rem', backgroundColor: '#f1f5f9' }}> 
             <div className="card-header header-actions border-none" style={{ paddingBottom: '0', marginBottom: '10px' }}> 
               <h3 className="modal-header-title mb-0">Select Purchase Products</h3> 
               <button className="btn btn-secondary action-buttons-right btn-sm" onClick={() => { setShowAddPurchaseProductModal(false); setSearchQuery(''); }}>Close</button> 
@@ -620,30 +680,35 @@ export default function PurchaseManager({
               /> 
             </div> 
             
-            <div className="table-responsive" style={{ flex: 1, overflowY: 'auto', margin: 0 }}> 
-              <table className="data-table table-fixed" style={{ fontSize: '0.9rem' }}> 
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1 }}> 
+            <div className="table-responsive modal-scroll-area-nobottom px-1 pb-1"> 
+              <table className="floating-tiles-table w-100" style={{ fontSize: '0.9rem' }}> 
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}> 
                   <tr> 
-                    <th className="col-15" style={{ padding: '0.5rem' }}>ID</th> 
-                    <th className="col-30" style={{ padding: '0.5rem' }}>Product Name</th> 
-                    <th className="col-15" style={{ padding: '0.5rem' }}>HSN Code</th> 
-                    <th className="col-15" style={{ padding: '0.5rem' }}>Buy Price</th> 
-                    <th className="col-15" style={{ padding: '0.5rem' }}>Stock</th> 
+                    <th className="text-left col-15" style={{ padding: '0.5rem' }}>ID</th> 
+                    <th className="text-left col-35" style={{ padding: '0.5rem' }}>Product Name</th> 
+                    <th className="text-center col-10" style={{ padding: '0.5rem' }}>HSN Code</th> 
+                    <th className="text-right col-15" style={{ padding: '0.5rem' }}>Box Buy Price</th> 
+                    <th className="text-right col-15" style={{ padding: '0.5rem' }}>Piece Buy Price</th>
+                    <th className="text-center col-10" style={{ padding: '0.5rem' }}>Stock</th> 
                   </tr> 
                 </thead> 
                 <tbody> 
                   {filteredProducts.map(product => { 
                     return ( 
                       <tr key={product.id} className="clickable-row available" onClick={() => addToPurchaseCart(product)} title="Click block to add to purchase cart"> 
-                        <td className="fw-bold" style={{ padding: '0.4rem 0.5rem' }}>{formatProductId(product.id)}</td> 
+                        <td className="fw-bold text-slate" style={{ padding: '0.4rem 0.5rem' }}>{formatProductId(product.id)}</td> 
                         <td className="col-product-name" style={{ padding: '0.4rem 0.5rem', fontSize: '1rem' }}>{product.name}</td> 
-                        <td style={{ padding: '0.4rem 0.5rem' }}>{product.hsnCode || 'N/A'}</td> 
-                        <td className="price-text text-warning" style={{ padding: '0.4rem 0.5rem' }}>{formatMoney(product.purchasePrice)}</td> 
-                        <td className="fw-bold text-dark-muted" style={{ padding: '0.4rem 0.5rem' }}>{product.stock} Units</td> 
+                        <td className="text-center text-muted" style={{ padding: '0.4rem 0.5rem' }}>{product.hsnCode || 'N/A'}</td> 
+                        <td className="price-text text-right text-warning" style={{ padding: '0.4rem 0.5rem' }}>{formatMoney(product.purchasePrice)}</td> 
+                        
+                        {/* UPDATED: Add Piece Purchase Price Display */}
+                        <td className="price-text text-right text-purple" style={{ padding: '0.4rem 0.5rem' }}>{product.piecesPerBox > 0 ? formatMoney(product.piecePurchasePrice) : '-'}</td> 
+
+                        <td className="fw-bold text-center text-dark-muted" style={{ padding: '0.4rem 0.5rem' }}>{Math.floor(product.stock)} Boxes</td> 
                       </tr> 
                     ) 
                   })} 
-                  {filteredProducts.length === 0 && <tr><td colSpan={5} className="empty-state" style={{ padding: '2rem' }}>No products found.</td></tr>} 
+                  {filteredProducts.length === 0 && <tr><td colSpan={6} className="empty-state border-none" style={{ padding: '2rem' }}>No products found.</td></tr>} 
                 </tbody> 
               </table> 
             </div> 

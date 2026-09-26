@@ -37,7 +37,7 @@ export default function SalesManager({
     isPayLater: false,
     paymentMethod: 'Cash',
     saleDate: new Date().toISOString().split('T')[0],
-    dueDays: '', // CHANGED: Now tracks number of days
+    dueDays: '', 
     isDropdownOpen: false
   });
 
@@ -136,7 +136,11 @@ export default function SalesManager({
   );
 
   const activeBillingDetails = useMemo(() => {
-    const subtotal = activeTab.cart.reduce((sum, item) => sum + item.price * (Number(item.quantity) || 0), 0);
+    const subtotal = activeTab.cart.reduce((sum, item) => {
+      const currentPrice = item.sellType === 'Piece' ? item.piecePrice : item.price;
+      return sum + (currentPrice * (Number(item.quantity) || 0));
+    }, 0);
+    
     const discountAmount = subtotal * (activeTab.discountPercent / 100);
     const taxableAmount = subtotal - discountAmount;
     const cgstPercent = activeTab.taxPercent / 2;
@@ -274,13 +278,16 @@ export default function SalesManager({
 
   function addToCart(product) {
     if (product.stock <= 0) return window.alert(`Sorry, ${product.name} is currently out of stock!`);
-    const existing = activeTab.cart.find(item => item.id === product.id);
-    let newCart;
-    if (existing) {
+    
+    const existingIndex = activeTab.cart.findIndex(item => item.id === product.id && item.sellType === 'Box');
+    
+    let newCart = [...activeTab.cart];
+    if (existingIndex >= 0) {
+      const existing = newCart[existingIndex];
       if (existing.quantity >= product.stock) return window.alert(`Cannot add more. We only have ${product.stock} of ${product.name} in stock.`);
-      newCart = activeTab.cart.map(item => item.id === product.id ? { ...item, quantity: (Number(item.quantity) || 0) + 1 } : item);
+      newCart[existingIndex] = { ...existing, quantity: (Number(existing.quantity) || 0) + 1 };
     } else {
-      newCart = [...activeTab.cart, { ...product, quantity: 1 }];
+      newCart.push({ ...product, quantity: 1, sellType: 'Box' });
     }
     updateActiveTab({ cart: newCart });
   }
@@ -288,13 +295,27 @@ export default function SalesManager({
   function updateQuantity(index, val) {
     const item = activeTab.cart[index];
     if (val === '') {
-      const newCart = activeTab.cart.map((itm, idx) => idx === index ? { ...itm, quantity: '' } : itm);
+      const newCart = [...activeTab.cart];
+      newCart[index] = { ...item, quantity: '' };
       return updateActiveTab({ cart: newCart });
     }
     const quantity = Number(val);
     if (quantity < 0) return;
-    if (quantity > item.stock) return window.alert(`Cannot exceed available inventory (${item.stock} left).`);
-    const newCart = activeTab.cart.map((itm, idx) => idx === index ? { ...itm, quantity } : itm);
+    
+    const stockNeeded = item.sellType === 'Piece' ? (quantity / item.piecesPerBox) : quantity;
+    if (stockNeeded > item.stock) {
+      return window.alert(`Cannot exceed available inventory (${item.stock} boxes left).`);
+    }
+
+    const newCart = [...activeTab.cart];
+    newCart[index] = { ...item, quantity };
+    updateActiveTab({ cart: newCart });
+  }
+
+  function updateSellType(index, newType) {
+    const item = activeTab.cart[index];
+    const newCart = [...activeTab.cart];
+    newCart[index] = { ...item, sellType: newType, quantity: 1 }; 
     updateActiveTab({ cart: newCart });
   }
 
@@ -314,9 +335,15 @@ export default function SalesManager({
     
     const finalPaymentMethod = (activeTab.isPayLater || isDirectPayLater) ? 'Pay Later' : activeTab.paymentMethod;
 
+    // VERY IMPORTANT: Format the cart payload so the backend gets the exact piece price if applicable
+    const processedCartPayload = activeTab.cart.map(item => ({
+      ...item,
+      price: item.sellType === 'Piece' ? item.piecePrice : item.price
+    }));
+
     if (activeTab.editingInvoiceId) {
       invoiceService.update(
-        activeTab.editingInvoiceId, activeTab.activeCustomer.name, activeTab.cart,
+        activeTab.editingInvoiceId, activeTab.activeCustomer.name, processedCartPayload,
         activeBillingDetails.subtotal, activeTab.discountPercent, activeBillingDetails.cgst,
         activeBillingDetails.sgst, activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate,
         activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
@@ -334,7 +361,7 @@ export default function SalesManager({
       }).catch(err => window.alert('Failed to update sale. ' + err.message));
     } else {
       invoiceService.create(
-        activeTab.activeCustomer.name, activeTab.cart, activeBillingDetails.subtotal, 
+        activeTab.activeCustomer.name, processedCartPayload, activeBillingDetails.subtotal, 
         activeTab.discountPercent, activeBillingDetails.cgst, activeBillingDetails.sgst,
         activeBillingDetails.finalTotal, finalPaymentMethod, activeTab.saleDate,
         activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
@@ -383,15 +410,16 @@ export default function SalesManager({
     editTab.paymentMethod = editTab.isPayLater ? 'Cash' : (invoice.paymentMethod || 'Cash');
     editTab.saleDate = invoice.orderDate ? invoice.orderDate.split('T')[0] : new Date().toISOString().split('T')[0];
     editTab.customInvoiceId = invoice.customInvoiceId || '';
-    editTab.dueDays = invoice.dueDays ? invoice.dueDays.toString() : ''; // Populates back
+    editTab.dueDays = invoice.dueDays ? invoice.dueDays.toString() : ''; 
     editTab.cart = invoice.items.map(item => ({
       ...item.product, 
       id: item.product?.id || item.id, 
       name: item.product?.name || item.name || 'Unknown Product',
       price: item.price, 
       quantity: item.quantity, 
-      originalQuantity: item.quantity, 
-      stock: ((item.product?.stock || 0) + item.quantity) 
+      originalQuantity: item.quantity,
+      sellType: item.sellType || 'Box', 
+      stock: ((item.product?.stock || 0) + (item.sellType === 'Piece' ? (item.quantity / item.product?.piecesPerBox) : item.quantity)) 
     }));
 
     setSalesTabs([...salesTabs, editTab]);
@@ -565,32 +593,51 @@ export default function SalesManager({
                 <div className="table-responsive">
                   <table className="data-table">
                     <thead>
-                      <tr><th>S.No</th><th>Product</th><th>Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr>
+                      <tr><th>S.No</th><th>Product</th><th>Unit</th><th>Price</th><th>Quantity</th><th>Total</th><th>Action</th></tr>
                     </thead>
                     <tbody>
-                      {activeTab.cart.length ? activeTab.cart.map((item, idx) => (
-                        <tr key={`${item.id}-${idx}`}>
-                          <td className="fw-bold">{idx + 1}</td>
-                          <td><span className="product-name-large">{item.name || 'Unknown Product'}</span></td>
-                          <td>{formatMoney(item.price)}</td>
-                          <td>
-                            <input
-                              type="number"
-                              className="quantity-input form-control mb-0 qty-input-large"
-                              min="1"
-                              max={item.stock}
-                              value={item.quantity}
-                              onChange={e => updateQuantity(idx, e.target.value)}
-                              onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateQuantity(idx, 1); }}
-                            />
-                            {activeTab.editingInvoiceId && item.originalQuantity !== undefined && (
-                              <div className="text-muted fs-sm mt-1">Previous: {item.originalQuantity}</div>
-                            )}
-                          </td>
-                          <td className="price-text">{formatMoney(item.price * (Number(item.quantity) || 0))}</td>
-                          <td><button className="btn btn-danger" onClick={() => removeCartItem(idx)}>Remove</button></td>
-                        </tr>
-                      )) : <tr><td colSpan={6} className="empty-state">Cart is empty. Click "+ Add Products" to begin.</td></tr>}
+                      {activeTab.cart.length ? activeTab.cart.map((item, idx) => {
+                        const currentPrice = item.sellType === 'Piece' ? item.piecePrice : item.price;
+                        const hasPiecesConfigured = Number(item.piecesPerBox) > 0;
+                        return (
+                          <tr key={`${item.id}-${idx}`}>
+                            <td className="fw-bold">{idx + 1}</td>
+                            <td><span className="product-name-large">{item.name || 'Unknown Product'}</span></td>
+                            
+                            {/* UPDATED: Dropdown is always visible, but disabled if no pieces exist */}
+                            <td>
+                                <select 
+                                  className="form-control mb-0" 
+                                  style={{width: '90px', padding: '5px', cursor: hasPiecesConfigured ? 'pointer' : 'not-allowed'}}
+                                  value={item.sellType || 'Box'} 
+                                  onChange={e => updateSellType(idx, e.target.value)}
+                                  disabled={!hasPiecesConfigured}
+                                  title={!hasPiecesConfigured ? "Update this product in Inventory to set Pieces Per Box before selling by Piece" : ""}
+                                >
+                                  <option value="Box">Box</option>
+                                  {hasPiecesConfigured && <option value="Piece">Piece</option>}
+                                </select>
+                            </td>
+
+                            <td>{formatMoney(currentPrice)}</td>
+                            <td>
+                              <input
+                                type="number"
+                                className="quantity-input form-control mb-0 qty-input-large"
+                                min="1"
+                                value={item.quantity}
+                                onChange={e => updateQuantity(idx, e.target.value)}
+                                onBlur={e => { if (e.target.value === '' || Number(e.target.value) < 1) updateQuantity(idx, 1); }}
+                              />
+                              {activeTab.editingInvoiceId && item.originalQuantity !== undefined && (
+                                <div className="text-muted fs-sm mt-1">Previous: {item.originalQuantity}</div>
+                              )}
+                            </td>
+                            <td className="price-text text-success">{formatMoney(currentPrice * (Number(item.quantity) || 0))}</td>
+                            <td><button className="btn btn-danger" onClick={() => removeCartItem(idx)}>Remove</button></td>
+                          </tr>
+                        );
+                      }) : <tr><td colSpan={7} className="empty-state">Cart is empty. Click "+ Add Products" to begin.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -1009,7 +1056,6 @@ export default function SalesManager({
         {/* --- UPGRADED FLOATING TILES MODAL: ADD PRODUCT --- */}
         {showAddProductModal && (
           <div className="modal-overlay">
-            {/* Height extended to 95vh to fit more products */}
             <div className="modal-content" style={{ maxWidth: '1000px', width: '95%', height: '95vh', display: 'flex', flexDirection: 'column', padding: '1.5rem', backgroundColor: '#f1f5f9' }}>
               <div className="card-header header-actions border-none" style={{ paddingBottom: '0', marginBottom: '10px' }}>
                 <h3 className="modal-header-title mb-0">Select Products</h3>
@@ -1030,16 +1076,17 @@ export default function SalesManager({
                     <tr>
                       <th className="text-left col-15">ID</th>
                       <th className="text-left col-35">Product Name</th>
-                      <th className="text-center col-15">HSN Code</th>
-                      <th className="text-right col-15">Selling Price</th>
-                      <th className="text-center col-15">Stock</th>
+                      <th className="text-center col-10">HSN Code</th>
+                      <th className="text-right col-15">Box Price</th>
+                      <th className="text-right col-15">Piece Price</th>
+                      <th className="text-center col-10">Stock</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredProducts.map(product => {
                       const cartItem = activeTab.cart.find(c => c.id === product.id);
                       const inCartQty = cartItem ? (Number(cartItem.quantity) || 0) : 0;
-                      const availableStock = product.stock - inCartQty;
+                      const availableStock = product.stock - (cartItem?.sellType === 'Piece' ? (inCartQty / (product.piecesPerBox || 1)) : inCartQty);
                       const isOutOfStock = availableStock <= 0;
                       
                       return (
@@ -1051,11 +1098,12 @@ export default function SalesManager({
                           <td className="product-name-large">{product.name}</td>
                           <td className="text-center text-muted">{product.hsnCode || 'N/A'}</td>
                           <td className="price-text text-right text-success">{formatMoney(product.price)}</td>
-                          <td className={`fw-bold text-center ${isOutOfStock ? 'text-danger' : 'text-primary'}`}>{isOutOfStock ? 'Out of Stock' : `${availableStock} Units`}</td>
+                          <td className="price-text text-right text-purple">{product.piecesPerBox > 0 ? formatMoney(product.piecePrice) : '-'}</td>
+                          <td className={`fw-bold text-center ${isOutOfStock ? 'text-danger' : 'text-primary'}`}>{isOutOfStock ? 'Out of Stock' : `${Math.floor(availableStock)} Boxes`}</td>
                         </tr>
                       )
                     })}
-                    {filteredProducts.length === 0 && <tr><td colSpan={5} className="empty-state border-none">No products found.</td></tr>}
+                    {filteredProducts.length === 0 && <tr><td colSpan={6} className="empty-state border-none">No products found.</td></tr>}
                   </tbody>
                 </table>
               </div>

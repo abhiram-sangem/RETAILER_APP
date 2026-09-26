@@ -36,9 +36,10 @@ public class ProductController {
     @PostMapping
     public Product addProduct(@RequestBody Product product) {
         if (product.getMrp() == null) product.setMrp(product.getPrice());
-        product.setId(null); // Safe-guard to prevent ID conflicts
+        product.setId(null); 
         Product saved = productRepository.save(product);
         
+        // Note: Ensure InventoryLog entity is also updated to use Double for stock changes
         inventoryLogRepository.save(new InventoryLog(
             saved.getId(), saved.getName(), "NEW_PRODUCT", 
             saved.getStock(), saved.getStock(), "Initial Stock Entry"
@@ -57,25 +58,30 @@ public class ProductController {
             
             Product existing = null;
             
-            // Try matching by ID first (if uploading an exported sheet)
             if (p.getId() != null) {
                 existing = productRepository.findById(p.getId()).orElse(null);
             }
-            // Fallback to matching by exact name (use findFirst to prevent crash on duplicates)
             if (existing == null) {
                 existing = productRepository.findFirstByName(p.getName().trim()).orElse(null);
             }
             
             if (existing != null) {
-                // Update existing record
-                Integer oldStock = existing.getStock() == null ? 0 : existing.getStock();
-                Integer newStock = p.getStock() == null ? 0 : p.getStock();
+                // CHANGED: Use Double instead of Integer
+                Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
+                Double newStock = p.getStock() == null ? 0.0 : p.getStock();
                 
                 existing.setName(p.getName());
                 if (p.getHsnCode() != null && !p.getHsnCode().isEmpty()) existing.setHsnCode(p.getHsnCode());
                 if (p.getPurchasePrice() != null && p.getPurchasePrice() > 0) existing.setPurchasePrice(p.getPurchasePrice());
                 if (p.getMrp() != null && p.getMrp() > 0) existing.setMrp(p.getMrp());
                 if (p.getPrice() != null && p.getPrice() > 0) existing.setPrice(p.getPrice());
+                
+                // Set piece data if it exists in the payload
+                if (p.getPiecesPerBox() != null) existing.setPiecesPerBox(p.getPiecesPerBox());
+                if (p.getPiecePurchasePrice() != null) existing.setPiecePurchasePrice(p.getPiecePurchasePrice());
+                if (p.getPieceMrp() != null) existing.setPieceMrp(p.getPieceMrp());
+                if (p.getPiecePrice() != null) existing.setPiecePrice(p.getPiecePrice());
+
                 existing.setStock(newStock);
                 
                 Product saved = productRepository.save(existing);
@@ -88,7 +94,6 @@ public class ProductController {
                     ));
                 }
             } else {
-                // Create new record
                 p.setId(null); 
                 if (p.getMrp() == null || p.getMrp() == 0) p.setMrp(p.getPrice());
                 Product saved = productRepository.save(p);
@@ -106,14 +111,21 @@ public class ProductController {
     @PutMapping("/{id}")
     public Product updateProduct(@PathVariable Long id, @RequestBody Product details) {
         Product product = productRepository.findById(id).orElseThrow();
-        Integer oldStock = product.getStock() == null ? 0 : product.getStock();
-        Integer newStock = details.getStock() == null ? 0 : details.getStock();
+        // CHANGED: Use Double instead of Integer
+        Double oldStock = product.getStock() == null ? 0.0 : product.getStock();
+        Double newStock = details.getStock() == null ? 0.0 : details.getStock();
         
         product.setName(details.getName());
         product.setHsnCode(details.getHsnCode());
         product.setPurchasePrice(details.getPurchasePrice());
         product.setMrp(details.getMrp() != null ? details.getMrp() : details.getPrice());
         product.setPrice(details.getPrice());
+        
+        product.setPiecesPerBox(details.getPiecesPerBox());
+        product.setPiecePurchasePrice(details.getPiecePurchasePrice());
+        product.setPieceMrp(details.getPieceMrp());
+        product.setPiecePrice(details.getPiecePrice());
+
         product.setStock(newStock);
         
         Product saved = productRepository.save(product);

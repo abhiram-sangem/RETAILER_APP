@@ -21,8 +21,12 @@ public class InvoiceItem {
     @JoinColumn(name = "product_id")
     private Product product;
 
-    private Integer quantity;
+    // --- CHANGED TO DOUBLE TO SUPPORT FRACTIONAL RETURNS/EDITS ---
+    private Double quantity;
     private Double price;
+    
+    // --- NEW FIELD FOR BOX vs PIECE ---
+    private String sellType; 
 
     @ManyToOne
     @JoinColumn(name = "invoice_id")
@@ -35,11 +39,14 @@ public class InvoiceItem {
     public Product getProduct() { return product; }
     public void setProduct(Product product) { this.product = product; }
 
-    public Integer getQuantity() { return quantity; }
-    public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    public Double getQuantity() { return quantity; }
+    public void setQuantity(Double quantity) { this.quantity = quantity; }
 
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
+    
+    public String getSellType() { return sellType; }
+    public void setSellType(String sellType) { this.sellType = sellType; }
 
     public Invoice getInvoice() { return invoice; }
     public void setInvoice(Invoice invoice) { this.invoice = invoice; }

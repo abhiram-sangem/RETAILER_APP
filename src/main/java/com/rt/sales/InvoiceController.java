@@ -77,7 +77,6 @@ public class InvoiceController {
         String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : "Cash";
         invoice.setPaymentMethod(paymentMethod);
         
-        // --- CATCH NEW FIELDS FROM REACT ---
         invoice.setDueDays(request.getDueDays());
         invoice.setCustomInvoiceId(request.getCustomInvoiceId());
 
@@ -85,14 +84,24 @@ public class InvoiceController {
         if (request.getCartItems() != null) {
             for (InvoiceRequest.CartItemRequest itemReq : request.getCartItems()) {
                 Product product = productRepository.findById(itemReq.getId()).orElseThrow();
-                int qty = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1;
+                Double qty = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1.0;
                 
-                product.setStock(Math.max(0, (product.getStock() == null ? 0 : product.getStock()) - qty));
+                // --- FRACTIONAL INVENTORY MATH ---
+                Double stockDeduction = qty;
+                String sellType = itemReq.getSellType() != null ? itemReq.getSellType() : "Box";
+                
+                if ("Piece".equalsIgnoreCase(sellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockDeduction = qty / product.getPiecesPerBox();
+                }
+                
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                product.setStock(Math.max(0.0, currentStock - stockDeduction));
                 productRepository.save(product);
 
                 InvoiceItem item = new InvoiceItem();
                 item.setProduct(product);
                 item.setQuantity(qty);
+                item.setSellType(sellType);
                 item.setPrice(itemReq.getPrice() != null ? itemReq.getPrice() : product.getPrice());
                 item.setInvoice(invoice);
                 items.add(item);
@@ -107,7 +116,13 @@ public class InvoiceController {
             log.setProductId(item.getProduct().getId());
             log.setProductName(item.getProduct().getName());
             log.setActionType("SALE");
-            log.setQuantityChanged(-item.getQuantity());
+            
+            Double stockDeduction = item.getQuantity();
+            if ("Piece".equalsIgnoreCase(item.getSellType()) && item.getProduct().getPiecesPerBox() != null && item.getProduct().getPiecesPerBox() > 0) {
+                stockDeduction = item.getQuantity() / item.getProduct().getPiecesPerBox();
+            }
+            
+            log.setQuantityChanged(-stockDeduction);
             log.setFinalStock(item.getProduct().getStock());
             log.setDescription("Sale Bill #" + savedInvoice.getId());
             log.setTimestamp(LocalDateTime.now());
@@ -140,25 +155,33 @@ public class InvoiceController {
         StringBuilder oldJson = new StringBuilder("[");
         for (int i = 0; i < invoice.getItems().size(); i++) {
             InvoiceItem item = invoice.getItems().get(i);
-            oldJson.append(String.format("{\"name\":\"%s\", \"qty\":%d, \"price\":%f}", 
+            oldJson.append(String.format("{\"name\":\"%s\", \"qty\":%s, \"price\":%f}", 
                 item.getProduct().getName().replace("\"", "\\\""), 
-                item.getQuantity(), 
+                String.valueOf(item.getQuantity()), 
                 item.getPrice()));
             if (i < invoice.getItems().size() - 1) oldJson.append(",");
         }
         oldJson.append("]");
         history.setOldItemsJson(oldJson.toString());
 
+        // Revert old items stock
         for (InvoiceItem oldItem : invoice.getItems()) {
             Product p = oldItem.getProduct();
-            p.setStock((p.getStock() == null ? 0 : p.getStock()) + oldItem.getQuantity());
+            Double currentStock = p.getStock() == null ? 0.0 : p.getStock();
+            
+            Double oldStockDeduction = oldItem.getQuantity() != null ? oldItem.getQuantity() : 0.0;
+            if ("Piece".equalsIgnoreCase(oldItem.getSellType()) && p.getPiecesPerBox() != null && p.getPiecesPerBox() > 0) {
+                oldStockDeduction = oldStockDeduction / p.getPiecesPerBox();
+            }
+            
+            p.setStock(currentStock + oldStockDeduction);
             productRepository.save(p);
             
             InventoryHistory log = new InventoryHistory();
             log.setProductId(p.getId());
             log.setProductName(p.getName());
             log.setActionType("EDIT_REVERT");
-            log.setQuantityChanged(oldItem.getQuantity());
+            log.setQuantityChanged(oldStockDeduction);
             log.setFinalStock(p.getStock());
             log.setDescription("Revert Bill #" + invoice.getId() + " for Edit");
             log.setTimestamp(LocalDateTime.now());
@@ -175,7 +198,6 @@ public class InvoiceController {
         invoice.setFinalTotal(request.getFinalTotal() != null ? request.getFinalTotal() : 0.0);
         invoice.setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : invoice.getPaymentMethod());
         
-        // --- CATCH UPDATED FIELDS FROM REACT ---
         invoice.setDueDays(request.getDueDays());
         invoice.setCustomInvoiceId(request.getCustomInvoiceId());
 
@@ -190,22 +212,30 @@ public class InvoiceController {
             for (int i = 0; i < request.getCartItems().size(); i++) {
                 InvoiceRequest.CartItemRequest itemReq = request.getCartItems().get(i);
                 Product product = productRepository.findById(itemReq.getId()).orElseThrow();
-                int qty = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1;
+                Double qty = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1.0;
                 Double appliedPrice = itemReq.getPrice() != null ? itemReq.getPrice() : product.getPrice();
+                String sellType = itemReq.getSellType() != null ? itemReq.getSellType() : "Box";
                 
-                product.setStock(Math.max(0, (product.getStock() == null ? 0 : product.getStock()) - qty));
+                Double stockDeduction = qty;
+                if ("Piece".equalsIgnoreCase(sellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockDeduction = qty / product.getPiecesPerBox();
+                }
+                
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                product.setStock(Math.max(0.0, currentStock - stockDeduction));
                 productRepository.save(product);
 
                 InvoiceItem item = new InvoiceItem();
                 item.setProduct(product);
                 item.setQuantity(qty);
+                item.setSellType(sellType);
                 item.setPrice(appliedPrice);
                 item.setInvoice(invoice);
                 invoice.getItems().add(item);
                 
-                newJson.append(String.format("{\"name\":\"%s\", \"qty\":%d, \"price\":%f}", 
+                newJson.append(String.format("{\"name\":\"%s\", \"qty\":%s, \"price\":%f}", 
                     product.getName().replace("\"", "\\\""), 
-                    qty, 
+                    String.valueOf(qty), 
                     appliedPrice));
                 if (i < request.getCartItems().size() - 1) newJson.append(",");
                 
@@ -213,7 +243,7 @@ public class InvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("EDIT_APPLY");
-                log.setQuantityChanged(-qty);
+                log.setQuantityChanged(-stockDeduction);
                 log.setFinalStock(product.getStock());
                 log.setDescription("Apply New Items to Bill #" + invoice.getId());
                 log.setTimestamp(LocalDateTime.now());
@@ -257,14 +287,22 @@ public class InvoiceController {
         if (request.getCartItems() != null) {
             for (InvoiceRequest.CartItemRequest itemReq : request.getCartItems()) {
                 Product product = productRepository.findById(itemReq.getId()).orElseThrow();
-                int qtyToReturn = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1;
+                Double qtyToReturn = itemReq.getQuantity() != null ? itemReq.getQuantity() : 1.0;
+                String sellType = itemReq.getSellType() != null ? itemReq.getSellType() : "Box";
                 
-                product.setStock((product.getStock() == null ? 0 : product.getStock()) + qtyToReturn);
+                Double stockRestoration = qtyToReturn;
+                if ("Piece".equalsIgnoreCase(sellType) && product.getPiecesPerBox() != null && product.getPiecesPerBox() > 0) {
+                    stockRestoration = qtyToReturn / product.getPiecesPerBox();
+                }
+                
+                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                product.setStock(currentStock + stockRestoration);
                 productRepository.save(product);
 
                 InvoiceItem item = new InvoiceItem();
                 item.setProduct(product);
                 item.setQuantity(-qtyToReturn);
+                item.setSellType(sellType);
                 item.setPrice(itemReq.getPrice() != null ? itemReq.getPrice() : product.getPrice());
                 item.setInvoice(returnInvoice);
                 returnItems.add(item);
@@ -273,7 +311,7 @@ public class InvoiceController {
                 log.setProductId(product.getId());
                 log.setProductName(product.getName());
                 log.setActionType("RETURN");
-                log.setQuantityChanged(qtyToReturn);
+                log.setQuantityChanged(stockRestoration);
                 log.setFinalStock(product.getStock());
                 log.setDescription("Return from Bill #" + originalInvoice.getId());
                 log.setTimestamp(LocalDateTime.now());
@@ -306,7 +344,6 @@ public class InvoiceController {
         private String paymentMethod;
         private String orderDate;
         
-        // --- ADDED DTO FIELDS ---
         private Integer dueDays;
         private String customInvoiceId;
 
@@ -345,17 +382,21 @@ public class InvoiceController {
 
         public static class CartItemRequest {
             private Long id;
-            private Integer quantity;
+            private Double quantity; // CHANGED to Double for fraction support
             private Double price;
+            private String sellType; // ADDED to know if it's Box or Piece
 
             public Long getId() { return id; }
             public void setId(Long id) { this.id = id; }
 
-            public Integer getQuantity() { return quantity; }
-            public void setQuantity(Integer quantity) { this.quantity = quantity; }
+            public Double getQuantity() { return quantity; }
+            public void setQuantity(Double quantity) { this.quantity = quantity; }
 
             public Double getPrice() { return price; }
             public void setPrice(Double price) { this.price = price; }
+            
+            public String getSellType() { return sellType; }
+            public void setSellType(String sellType) { this.sellType = sellType; }
         }
     }
 }

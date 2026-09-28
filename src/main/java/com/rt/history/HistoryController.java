@@ -23,6 +23,9 @@ public class HistoryController {
     @Autowired
     private PurchaseInvoiceHistoryRepository purchaseInvoiceHistoryRepository;
 
+    @Autowired
+    private ReceiptHistoryRepository receiptHistoryRepository;
+
     @GetMapping("/inventory")
     public ResponseEntity<List<InventoryHistory>> getInventoryHistory() {
         return ResponseEntity.ok(inventoryHistoryRepository.findAllByOrderByTimestampDesc());
@@ -36,5 +39,10 @@ public class HistoryController {
     @GetMapping("/purchase-invoices")
     public ResponseEntity<List<PurchaseInvoiceHistory>> getPurchaseInvoiceHistory() {
         return ResponseEntity.ok(purchaseInvoiceHistoryRepository.findAllByOrderByEditDateDesc());
+    }
+
+    @GetMapping("/receipts")
+    public ResponseEntity<List<ReceiptHistory>> getReceiptHistory() {
+        return ResponseEntity.ok(receiptHistoryRepository.findAllByOrderByEditDateDesc());
     }
 }

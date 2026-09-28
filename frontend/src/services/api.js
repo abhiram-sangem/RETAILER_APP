@@ -56,7 +56,7 @@ export const invoiceService = {
            id: item.id || item.product?.id, 
            quantity: item.quantity, 
            price: item.price,
-           sellType: item.sellType || 'Box' // <-- INJECTED HERE
+           sellType: item.sellType || 'Box'
          })), 
          grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
       }),
@@ -75,7 +75,7 @@ export const invoiceService = {
            id: item.id || item.product?.id, 
            quantity: item.quantity, 
            price: item.price,
-           sellType: item.sellType || 'Box' // <-- INJECTED HERE
+           sellType: item.sellType || 'Box'
          })), 
          grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
       }),
@@ -93,7 +93,7 @@ export const invoiceService = {
            id: item.id || item.product?.id, 
            quantity: item.quantity, 
            price: item.price,
-           sellType: item.sellType || 'Box' // <-- INJECTED HERE
+           sellType: item.sellType || 'Box'
          })), 
          grossTotal, discountPercent, cgst, sgst, finalTotal 
       }),
@@ -219,7 +219,7 @@ export const purchaseInvoiceService = {
           productId: item.id || item.product?.id, 
           quantity: item.quantity, 
           purchasePrice: item.purchasePrice,
-          sellType: item.sellType || 'Box' // <-- INJECTED HERE
+          sellType: item.sellType || 'Box' 
         }))
       }),
     }).then(async res => {
@@ -238,7 +238,7 @@ export const purchaseInvoiceService = {
           productId: item.id || item.product?.id, 
           quantity: item.quantity, 
           purchasePrice: item.purchasePrice,
-          sellType: item.sellType || 'Box' // <-- INJECTED HERE
+          sellType: item.sellType || 'Box' 
         }))
       }),
     }).then(async res => {
@@ -262,6 +262,11 @@ export const historyService = {
     fetch(`${API_URL}/api/history/purchase-invoices`).then(res => {
       if (!res.ok) throw new Error('Failed to load purchase history')
       return res.json()
+    }),
+  getReceiptHistory: () =>
+    fetch(`${API_URL}/api/history/receipts`).then(res => {
+      if (!res.ok) throw new Error('Failed to load receipt history')
+      return res.json()
     })
 }
 
@@ -273,6 +278,16 @@ export const receiptService = {
       body: JSON.stringify({ customerId, amount, discountAmount, paymentMode, receiptDate, remarks, customReceiptId })
     }).then(async res => {
       if (!res.ok) throw new Error(await res.text() || 'Failed to generate receipt');
+      return res.json();
+    }),
+
+  update: (id, customerId, amount, discountAmount, paymentMode, receiptDate, remarks, customReceiptId) =>
+    fetch(`${API_URL}/api/receipts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, amount, discountAmount, paymentMode, receiptDate, remarks, customReceiptId })
+    }).then(async res => {
+      if (!res.ok) throw new Error(await res.text() || 'Failed to update receipt');
       return res.json();
     }),
 

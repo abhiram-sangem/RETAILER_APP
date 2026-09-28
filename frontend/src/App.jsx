@@ -28,13 +28,11 @@ import {
 } from './services/api';
 
 export default function App() {
-  // --- AUTH STATE ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // --- CORE DATA STATE ---
   const [view, setView] = useState('home');
   const [products, setProducts] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -44,9 +42,9 @@ export default function App() {
   const [inventoryHistory, setInventoryHistory] = useState([]);
   const [invoiceHistory, setInvoiceHistory] = useState([]);
   const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([]);
+  const [receiptHistory, setReceiptHistory] = useState([]);
   const [vendors, setVendors] = useState([]);
 
-  // --- INITIAL DATA LOAD ---
   useEffect(() => {
     loadProducts();
     loadCustomers();
@@ -56,6 +54,7 @@ export default function App() {
     loadReceipts();
     loadVendors();
   }, []);
+  
   function loadVendors() { vendorService.getVendors().then(data => setVendors(data || [])); }
   function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])); }
   function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])); }
@@ -66,9 +65,9 @@ export default function App() {
     historyService.getInventoryHistory().then(data => setInventoryHistory(Array.isArray(data) ? data : []));
     historyService.getInvoiceHistory().then(data => setInvoiceHistory(Array.isArray(data) ? data : []));
     historyService.getPurchaseInvoiceHistory().then(data => setPurchaseInvoiceHistory(Array.isArray(data) ? data : []));
+    historyService.getReceiptHistory().then(data => setReceiptHistory(Array.isArray(data) ? data : []));
   }
 
-  // --- DASHBOARD MATH (Extracted for Dashboard performance) ---
   const salesStats = useMemo(() => {
     const dailyMap = {}; const weeklyMap = {}; const monthlyMap = {}; const yearlyMap = {};
     invoices.forEach(inv => {
@@ -96,7 +95,6 @@ export default function App() {
     return { daily: toSortedArray(dailyMap), weekly: toSortedArray(weeklyMap), monthly: toSortedArray(monthlyMap), yearly: toSortedArray(yearlyMap) };
   }, [invoices]);
 
-  // --- LOGIN GATE ---
   const handleLogin = (e) => {
     e.preventDefault();
     if (username === 'admin' && password === '12345') { setIsLoggedIn(true); setLoginError(''); } 
@@ -107,7 +105,6 @@ export default function App() {
     return <Login handleLogin={handleLogin} loginError={loginError} username={username} setUsername={setUsername} password={password} setPassword={setPassword} />;
   }
 
-  // --- RENDER ROUTER ---
   return (
     <div className="app-layout">
       <Topbar 
@@ -118,67 +115,45 @@ export default function App() {
       />
 
       <main className="main-content">
-        {/* HOMEPAGE */}
         {view === 'home' && (
           <Dashboard salesStats={salesStats} invoices={invoices} setView={setView} />
         )}
-
-        {/* PRODUCTS & INVENTORY */}
         {['products'].includes(view) && (
           <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadHistory} />
         )}
         {['inventory', 'inventory-history'].includes(view) && (
           <InventoryManager view={view} products={products} inventoryHistory={inventoryHistory} loadProducts={loadProducts} loadHistory={loadHistory} />
         )}
-
-        {/* CUSTOMERS & LEDGERS */}
         {['customers-manage'].includes(view) && (
           <CustomerManager customers={customers} loadCustomers={loadCustomers} />
         )}
         {['ledgers', 'ledger-statement'].includes(view) && (
           <LedgerManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} />
         )}
-
-        {/* SALES */}
         {['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history', 'sale-edit-compare', 'drafts-list'].includes(view) && (
           <SalesManager view={view} setView={setView} products={products} customers={customers} invoices={invoices} invoiceHistory={invoiceHistory} loadProducts={loadProducts} loadInvoices={loadInvoices} loadHistory={loadHistory} loadCustomers={loadCustomers} />
         )}
-
-        {/* PURCHASES */}
         {['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history', 'purchase-edit-compare'].includes(view) && (
           <PurchaseManager view={view} setView={setView} products={products} purchaseInvoices={purchaseInvoices} purchaseInvoiceHistory={purchaseInvoiceHistory} loadProducts={loadProducts} loadPurchaseInvoices={loadPurchaseInvoices} loadHistory={loadHistory} />
         )}
-
-        {/* RECEIPTS */}
-        {['receipts', 'receipts-list'].includes(view) && (
-          <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} loadCustomers={loadCustomers} loadReceipts={loadReceipts} />
+        {['receipts', 'receipts-list', 'receipt-edit-history', 'receipt-edit-compare'].includes(view) && (
+          <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} receiptHistory={receiptHistory} loadCustomers={loadCustomers} loadReceipts={loadReceipts} loadHistory={loadHistory} />
         )}
-
-        {/* DATA TRANSFER */}
         {view === 'data-transfer' && (
           <DataTransfer customers={customers} products={products} loadCustomers={loadCustomers} loadProducts={loadProducts} loadHistory={loadHistory} />
         )}
-
-        {/* BUSINESS REPORTS */}
         {view === 'reports' && (
           <ReportsManager invoices={invoices} purchaseInvoices={purchaseInvoices} products={products} customers={customers} />
         )}
-
-        {/* SETTINGS MODULE */}
         {view === 'settings' && (
           <SettingsManager />
         )}
-
-        {/* VENDOR MANAGEMENT */}
         {view === 'vendors-manage' && (
           <VendorManager vendors={vendors} loadVendors={loadVendors} />
         )}
-
-        {/* ROUTE COLLECTION PLANNER */}
         {view === 'collections' && (
           <CollectionPlanner customers={customers} invoices={invoices} />
         )}
-
       </main>
     </div>
   );

@@ -12,7 +12,6 @@ import jakarta.persistence.ManyToOne;
 
 @Entity
 public class PurchaseInvoiceItem {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -21,26 +20,33 @@ public class PurchaseInvoiceItem {
     @JoinColumn(name = "product_id")
     private Product product;
 
-    // --- CHANGED TO DOUBLE ---
-    private Double quantity; 
+    private Integer quantity;
     private Double purchasePrice;
+    
+    // --- NEW FIELD INJECTED TO FIX COMPILE ERROR ---
+    private String sellType;
 
     @ManyToOne
     @JoinColumn(name = "purchase_invoice_id")
-    @JsonIgnore 
+    @JsonIgnore
     private PurchaseInvoice purchaseInvoice;
 
+    // --- GETTERS AND SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-
+    
     public Product getProduct() { return product; }
     public void setProduct(Product product) { this.product = product; }
-
-    public Double getQuantity() { return quantity; }
-    public void setQuantity(Double quantity) { this.quantity = quantity; }
-
+    
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    
     public Double getPurchasePrice() { return purchasePrice; }
     public void setPurchasePrice(Double purchasePrice) { this.purchasePrice = purchasePrice; }
+
+    // --- NEW GETTER & SETTER FOR SELL TYPE ---
+    public String getSellType() { return sellType; }
+    public void setSellType(String sellType) { this.sellType = sellType; }
 
     public PurchaseInvoice getPurchaseInvoice() { return purchaseInvoice; }
     public void setPurchaseInvoice(PurchaseInvoice purchaseInvoice) { this.purchaseInvoice = purchaseInvoice; }

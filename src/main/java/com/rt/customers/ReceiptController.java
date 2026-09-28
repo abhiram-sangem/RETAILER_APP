@@ -10,10 +10,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.rt.history.ReceiptHistory;
+import com.rt.history.ReceiptHistoryRepository;
 
 @RestController
 @RequestMapping("/api/receipts")
@@ -25,6 +30,9 @@ public class ReceiptController {
 
     @Autowired
     private CustomerRepository customerRepository;
+    
+    @Autowired
+    private ReceiptHistoryRepository receiptHistoryRepository;
 
     @PostMapping
     @Transactional
@@ -56,16 +64,12 @@ public class ReceiptController {
             receipt.setRemarks(remarks);
             receipt.setCustomReceiptId(customReceiptId);
 
-            // --- SMART TIMESTAMP LOGIC ---
             String dateStr = (String) payload.get("receiptDate");
             if (dateStr != null && !dateStr.isEmpty()) {
                 LocalDate parsedDate = LocalDate.parse(dateStr);
-                
                 if (parsedDate.isEqual(LocalDate.now())) {
-                    // If logging for today, use the exact current time
                     receipt.setReceiptDate(LocalDateTime.now());
                 } else {
-                    // If backdated, set to end-of-day (23:59:59) so it clears after that day's bills
                     receipt.setReceiptDate(parsedDate.atTime(LocalTime.MAX)); 
                 }
             } else {
@@ -75,6 +79,57 @@ public class ReceiptController {
             Receipt savedReceipt = receiptRepository.save(receipt);
             return ResponseEntity.ok(savedReceipt);
 
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PutMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> updateReceipt(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        try {
+            Receipt receipt = receiptRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Receipt not found"));
+            
+            Customer customer = customerRepository.findById(receipt.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
+
+            Double newAmount = Double.parseDouble(payload.get("amount").toString());
+            Double newDiscount = payload.containsKey("discountAmount") && payload.get("discountAmount") != null && !payload.get("discountAmount").toString().isEmpty() 
+                 ? Double.parseDouble(payload.get("discountAmount").toString()) 
+                 : 0.0;
+
+            Double oldTotal = receipt.getAmount() + (receipt.getDiscountAmount() != null ? receipt.getDiscountAmount() : 0.0);
+            Double newTotal = newAmount + newDiscount;
+
+            // Log the history before changing
+            ReceiptHistory history = new ReceiptHistory();
+            history.setOriginalReceiptId(receipt.getId());
+            history.setCustomerName(receipt.getCustomerName());
+            history.setOldAmount(receipt.getAmount());
+            history.setOldDiscount(receipt.getDiscountAmount() != null ? receipt.getDiscountAmount() : 0.0);
+            history.setNewAmount(newAmount);
+            history.setNewDiscount(newDiscount);
+            history.setEditDate(LocalDateTime.now());
+            receiptHistoryRepository.save(history);
+
+            // Adjust balance: Add back old, subtract new
+            customer.setBalance(customer.getBalance() + oldTotal - newTotal);
+            customerRepository.save(customer);
+            
+            receipt.setAmount(newAmount);
+            receipt.setDiscountAmount(newDiscount);
+            receipt.setPaymentMode((String) payload.get("paymentMode"));
+            receipt.setRemarks((String) payload.get("remarks"));
+            receipt.setCustomReceiptId((String) payload.get("customReceiptId"));
+
+            String dateStr = (String) payload.get("receiptDate");
+            if (dateStr != null && !dateStr.isEmpty()) {
+                LocalDate parsedDate = LocalDate.parse(dateStr);
+                receipt.setReceiptDate(parsedDate.atTime(LocalTime.MAX));
+            }
+
+            return ResponseEntity.ok(receiptRepository.save(receipt));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

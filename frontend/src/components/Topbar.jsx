@@ -41,13 +41,15 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
           </div>
         </div>
         
+        {/* UPGRADED RECEIPTS DROPDOWN */}
         <div className="nav-dropdown">
-          <button className={`nav-item ${['receipts', 'receipts-list'].includes(view) ? 'active' : ''}`}>
+          <button className={`nav-item ${['receipts', 'receipts-list', 'receipt-edit', 'receipt-edit-history', 'receipt-edit-compare'].includes(view) ? 'active' : ''}`}>
             Receipts ▼
           </button>
           <div className="nav-dropdown-content">
             <button className="nav-dropdown-item" onClick={() => setView('receipts')}>New Receipt</button>
-            <button className="nav-dropdown-item" onClick={() => setView('receipts-list')}>Receipts History</button>
+            <button className="nav-dropdown-item" onClick={() => setView('receipts-list')}>Receipts List</button>
+            <button className="nav-dropdown-item" onClick={() => setView('receipt-edit-history')}>Edit History</button>
           </div>
         </div>
 
@@ -55,13 +57,12 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
         <button className={`nav-item ${view === 'customers-manage' ? 'active' : ''}`} onClick={() => setView('customers-manage')}>Customers</button>
         <button className={`nav-item ${view === 'products' ? 'active' : ''}`} onClick={() => setView('products')}>Products</button>
         
-        {/* NEW "MORE" DROPDOWN */}
         <div className="nav-dropdown">
           <button className={`nav-item ${['reports', 'data-transfer', 'settings', 'collections'].includes(view) ? 'active' : ''}`}>
             More ▼
           </button>
           <div className="nav-dropdown-content">
-            <button className="nav-dropdown-item" onClick={() => setView('collections')}>Collection</button>
+            <button className="nav-dropdown-item" onClick={() => setView('collections')}>Route Planner</button>
             <button className="nav-dropdown-item" onClick={() => setView('reports')}>Reports</button>
             <button className="nav-dropdown-item" onClick={() => setView('data-transfer')}>Data Transfer</button>
             <button className="nav-dropdown-item" onClick={() => setView('settings')}>Settings</button>

@@ -3,7 +3,7 @@ import { formatReceiptId, formatInvoiceId, formatMoney } from '../utils/formatte
 import { receiptService } from '../services/api';
 import Pagination from '../components/Pagination';
 
-export default function ReceiptManager({ view, setView, customers, receipts, invoices = [], loadCustomers, loadReceipts }) {
+export default function ReceiptManager({ view, setView, customers, receipts, receiptHistory = [], invoices = [], loadCustomers, loadReceipts, loadHistory }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilterRange, setDateFilterRange] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -24,15 +24,19 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
   const [globalDiscount, setGlobalDiscount] = useState('');
   const [globalRemarks, setGlobalRemarks] = useState('');
 
-  // Row-level payment inputs: { [billId]: { amount: '', discount: '' } }
   const [rowPayments, setRowPayments] = useState({});
   const [viewingReceipt, setViewingReceipt] = useState(null);
 
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: null, customerId: null, customerName: '', amount: '', discountAmount: '', paymentMode: 'Cash', receiptDate: '', remarks: '', customReceiptId: ''
+  });
+  const [historyCompareData, setHistoryCompareData] = useState(null);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, dateFilterRange, startDate, endDate, itemsPerPage]);
+  }, [searchQuery, dateFilterRange, startDate, endDate, itemsPerPage, view]);
 
-  // REACTIVE CUSTOMER LINK: Guarantees the balance is always perfectly in sync
   const activeCustomer = useMemo(() => {
     return customers.find(c => c.id === selectedCustomerId) || null;
   }, [selectedCustomerId, customers]);
@@ -103,20 +107,20 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     isWithinDateRange(r.receiptDate)
   );
 
+  const filteredReceiptHistory = receiptHistory.filter(log => 
+    ((log.customerName && log.customerName.toLowerCase().includes(safeSearch)) ||
+    formatReceiptId(log.originalReceiptId).toLowerCase().includes(safeSearch)) &&
+    isWithinDateRange(log.editDate)
+  );
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem);
+  const paginatedReceiptHistory = filteredReceiptHistory.slice(indexOfFirstItem, indexOfLastItem);
 
-  // ============================================================================
-  // 🚀 BULLETPROOF REVERSE FIFO ALLOCATION (Math Sync)
-  // Maps the absolute true customer balance onto the newest unpaid bills.
-  // ============================================================================
   const pendingBills = useMemo(() => {
     if (!activeCustomer || Number(activeCustomer.balance) <= 0) return [];
-    
     const targetNameNorm = (activeCustomer.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    
-    // Sort Pay Later bills NEWEST first
     const payLaterBills = invoices
       .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && ((inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === targetNameNorm))
       .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
@@ -124,12 +128,9 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     let remainingBalanceToAttribute = Number(activeCustomer.balance);
     const pending = [];
 
-    // Loop backwards: Assign the true remaining balance to the newest bills
     for (const bill of payLaterBills) {
       if (remainingBalanceToAttribute <= 0) break;
-
       const originalAmount = Number(bill.finalTotal || bill.totalAmount || 0);
-
       if (remainingBalanceToAttribute >= originalAmount) {
         pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: originalAmount });
         remainingBalanceToAttribute -= originalAmount;
@@ -139,25 +140,16 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
         remainingBalanceToAttribute = 0;
       }
     }
-
-    return pending; // Returns array with NEWEST bill at index 0
+    return pending;
   }, [activeCustomer, invoices]);
 
-  // ============================================================================
-  // 🚀 LIVE GLOBAL AUTO-ALLOCATION
-  // If the user types a global amount, this cascades it from OLDEST to NEWEST
-  // ============================================================================
   const liveAutoAllocation = useMemo(() => {
     const currentPayment = Number(globalAmount || 0) + Number(globalDiscount || 0);
     let remainingPayment = currentPayment;
-
-    // pendingBills is Newest First. We reverse it so we pay the OLDEST first.
     const reversedPending = [...pendingBills].reverse();
-    
     const allocatedReversed = reversedPending.map(bill => {
       let allocated = 0;
       let status = 'Pending';
-
       if (remainingPayment >= bill.dueAmount) {
         allocated = bill.dueAmount;
         remainingPayment -= bill.dueAmount;
@@ -167,15 +159,10 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
         remainingPayment = 0;
         status = 'Partial Clear';
       }
-
       return { ...bill, allocated, status };
     });
-
-    // Reverse it back so the UI displays Newest First
     return allocatedReversed.reverse();
   }, [pendingBills, globalAmount, globalDiscount]);
-
-  // --- SUBMISSION HANDLERS ---
 
   const submitGlobalPayment = () => {
     if (!activeCustomer) return window.alert("Please select a customer.");
@@ -185,21 +172,15 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
 
     receiptService.create(activeCustomer.id, globalAmount, globalDiscount, receiptMethod, receiptDate, finalRemarks, customReceiptId)
       .then(() => {
-        window.alert(`Payment of ${formatMoney(globalAmount)} successfully applied to ${activeCustomer.name}!`);
+        window.alert(`Payment of ${formatMoney(globalAmount)} successfully applied!`);
         setGlobalAmount(''); setGlobalDiscount(''); setGlobalRemarks(''); setCustomReceiptId('');
-        loadCustomers(); loadReceipts(); 
+        loadCustomers(); loadReceipts(); loadHistory();
       })
       .catch(err => window.alert("Failed to record receipt: " + err.message));
   };
 
   const handleRowInputChange = (billId, field, value) => {
-    setRowPayments(prev => ({
-      ...prev,
-      [billId]: {
-        ...prev[billId],
-        [field]: value
-      }
-    }));
+    setRowPayments(prev => ({ ...prev, [billId]: { ...prev[billId], [field]: value } }));
   };
 
   const handleFullPaymentClick = (bill) => {
@@ -213,7 +194,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
     const totalRowPayment = inputAmt + inputDisc;
 
     if (totalRowPayment <= 0) return window.alert("Please enter a payment or discount amount.");
-    if (totalRowPayment > bill.dueAmount) return window.alert(`Cannot pay more than the remaining due amount (${formatMoney(bill.dueAmount)}).`);
+    if (totalRowPayment > bill.dueAmount) return window.alert(`Cannot pay more than the remaining due amount.`);
 
     const finalRemarks = `Auto-Allocated to ${formatInvoiceId(bill.id)}`;
 
@@ -222,9 +203,38 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
         window.alert(`Payment securely logged specifically against ${formatInvoiceId(bill.id)}!`);
         setRowPayments(prev => ({ ...prev, [bill.id]: { amount: '', discount: '' } }));
         setCustomReceiptId('');
-        loadCustomers(); loadReceipts(); 
+        loadCustomers(); loadReceipts(); loadHistory();
       })
       .catch(err => window.alert("Failed to record receipt: " + err.message));
+  };
+
+  const handleEditClick = (rec, e) => {
+    e.stopPropagation();
+    setEditForm({
+      id: rec.id,
+      customerId: rec.customerId,
+      customerName: rec.customerName,
+      amount: rec.amount,
+      discountAmount: rec.discountAmount || '',
+      paymentMode: rec.paymentMode || 'Cash',
+      receiptDate: rec.receiptDate ? rec.receiptDate.split('T')[0] : new Date().toISOString().split('T')[0],
+      remarks: rec.remarks || '',
+      customReceiptId: rec.customReceiptId || ''
+    });
+    setShowEditModal(true);
+  };
+
+  const submitReceiptEdit = () => {
+    if (!editForm.amount || Number(editForm.amount) <= 0) return window.alert("Amount must be greater than zero.");
+    
+    receiptService.update(
+      editForm.id, editForm.customerId, editForm.amount, editForm.discountAmount, 
+      editForm.paymentMode, editForm.receiptDate, editForm.remarks, editForm.customReceiptId
+    ).then(() => {
+      window.alert("Receipt updated successfully! The customer's ledger balance has been automatically adjusted.");
+      setShowEditModal(false);
+      loadReceipts(); loadCustomers(); loadHistory();
+    }).catch(err => window.alert("Failed to update receipt: " + err.message));
   };
 
   function renderPagination(totalItems) {
@@ -252,18 +262,14 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
 
   return (
     <>
-      {/* 1. VIEW: GENERATE RECEIPT */}
       {view === 'receipts' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
-          {/* TOP CONFIG & GLOBAL PAYMENT PANEL */}
           <div className="card mb-0">
             <div className="card-header border-bottom-padded mb-1">
               <h2 className="card-title mb-0">Receipt Configuration</h2>
             </div>
             
             <div className="sales-control-panel bg-transparent p-0 border-none shadow-none mt-1">
-              {/* Row 1: Customer & Settings */}
               <div className="sales-control-row">
                 <div className="input-group" style={{ flex: 2 }}>
                   <label className="form-label">Select Customer:</label>
@@ -284,11 +290,8 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                       <ul className="dropdown-menu">
                         {receiptFilteredCustomers.length > 0 ? receiptFilteredCustomers.map(c => (
                           <li key={c.id} className="dropdown-item" onMouseDown={() => { 
-                            setSelectedCustomerId(c.id); 
-                            setReceiptSearch(c.name); 
-                            setIsReceiptDropdownOpen(false); 
-                            setRowPayments({});
-                            setGlobalAmount('');
+                            setSelectedCustomerId(c.id); setReceiptSearch(c.name); setIsReceiptDropdownOpen(false); 
+                            setRowPayments({}); setGlobalAmount('');
                           }}>
                             <span className="fw-bold">{c.name}</span>
                             <span className="dropdown-location">{c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}</span>
@@ -316,7 +319,6 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                 </div>
               </div>
 
-              {/* Row 2: Global Amount Inputs */}
               <div className="sales-control-row mt-1-5 p-1 bg-slate-50 border-light border-radius-md" style={{ border: '1px solid #cbd5e1' }}>
                 <div className="input-group" style={{ flex: 1 }}>
                   <label className="form-label text-primary fw-bold">Amount Received (₹):</label>
@@ -337,16 +339,13 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
             </div>
           </div>
 
-          {/* BOTTOM FULL WIDTH ALLOCATION TABLE */}
           <div className="card mb-0">
             <div className="card-header border-none pb-0">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h3 className="text-slate mb-0">Invoice Payment Allocation</h3>
                   <p className="text-muted mt-0-5 mb-0">
-                    {isAutoModeActive 
-                      ? "Auto-Allocation Active: Watch your payment cascade from the oldest bill upwards." 
-                      : "Surgical Mode: Enter a payment amount directly in the row for a specific invoice."}
+                    {isAutoModeActive ? "Auto-Allocation Active: Watch your payment cascade from the oldest bill upwards." : "Surgical Mode: Enter a payment amount directly in the row for a specific invoice."}
                   </p>
                 </div>
                 {activeCustomer && (
@@ -429,7 +428,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                                 </td>
                                 <td className="text-center align-middle">
                                   <div className="btn-group" style={{ justifyContent: 'center' }}>
-                                    <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleFullPaymentClick(bill)} title="Auto-fill full due">Fill Full</button>
+                                    <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleFullPaymentClick(bill)}>Fill Full</button>
                                     <button className="btn btn-primary btn-sm mb-0 px-3" onClick={() => submitRowPayment(bill)}>Pay</button>
                                   </div>
                                 </td>
@@ -468,13 +467,14 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                   <th>Less (Discount)</th>
                   <th>Total Settled</th>
                   <th>Payment Mode</th>
+                  <th className="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedReceipts.length ? paginatedReceipts.map(rec => {
                   const settledAmount = Number(rec.amount) + Number(rec.discountAmount || 0);
                   return (
-                  <tr key={rec.id} className="product-row available" onClick={() => setViewingReceipt(rec)} title="Click to view receipt document">
+                  <tr key={rec.id} className="product-row available" onClick={() => setViewingReceipt(rec)}>
                     <td className="fw-bold cell-padded text-primary">{rec.customReceiptId || formatReceiptId(rec.id)}</td>
                     <td className="cell-padded">{new Date(rec.receiptDate).toLocaleDateString('en-GB')}</td>
                     <td className="fw-bold cell-padded">{rec.customerName}</td>
@@ -482,8 +482,11 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
                     <td className="cell-padded text-danger fw-bold">{rec.discountAmount > 0 ? formatMoney(rec.discountAmount) : '-'}</td>
                     <td className="price-text text-slate fw-bold cell-padded">{formatMoney(settledAmount)}</td>
                     <td className="cell-padded"><span className="badge">{rec.paymentMode}</span></td>
+                    <td className="cell-padded text-center">
+                      <button className="btn btn-warning btn-sm" onClick={(e) => handleEditClick(rec, e)}>Edit</button>
+                    </td>
                   </tr>
-                )}) : <tr><td colSpan={7} className="empty-state">No receipts found for this date range.</td></tr>}
+                )}) : <tr><td colSpan={8} className="empty-state">No receipts found for this date range.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -491,8 +494,143 @@ export default function ReceiptManager({ view, setView, customers, receipts, inv
         </div>
       )}
 
+      {/* 3. VIEW: RECEIPT EDIT HISTORY LOGS */}
+      {view === 'receipt-edit-history' && (
+        <div className="card">
+          <div className="card-header header-actions header-actions-wrap">
+            <h2 className="card-title mb-0">Receipt Edit History</h2>
+            <div className="header-filters-group">
+              <input type="text" className="form-control mb-0 search-input-md" placeholder="Search Customer or ID..." value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }} />
+              {renderDateFilter()}
+            </div>
+          </div>
+          
+          <div className="table-responsive">
+            <table className="block-table data-table">
+              <thead><tr><th>Edit Date</th><th>Original Receipt ID</th><th>Customer Name</th><th>Details</th></tr></thead>
+              <tbody>
+                {paginatedReceiptHistory.length ? paginatedReceiptHistory.map(log => (
+                  <tr key={log.id} className="product-row available">
+                    <td className="cell-padded">{new Date(log.editDate).toLocaleDateString('en-GB')}</td>
+                    <td className="fw-bold cell-padded">{formatReceiptId(log.originalReceiptId)}</td>
+                    <td className="cell-padded">{log.customerName}</td>
+                    <td className="cell-padded">
+                      <button className="btn btn-secondary" onClick={() => { setHistoryCompareData(log); setView('receipt-edit-compare'); }}>View Comparison</button>
+                    </td>
+                  </tr>
+                )) : <tr><td colSpan={4} className="empty-state">No receipt edit history found for this date range.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {renderPagination(filteredReceiptHistory.length)}
+        </div>
+      )}
+
+      {/* 4. VIEW: RECEIPT EDIT COMPARISON */}
+      {view === 'receipt-edit-compare' && historyCompareData && (
+        <div className="card">
+          <div className="card-header header-actions">
+            <h2 className="card-title">Compare Edits: {formatReceiptId(historyCompareData.originalReceiptId)}</h2>
+            <button className="btn btn-secondary action-buttons-right" onClick={() => { setHistoryCompareData(null); setView('receipt-edit-history'); }}>Back to Edit History</button>
+          </div>
+          <div className="mb-2-bg">
+            <span className="fw-bold text-slate">Customer: </span> {historyCompareData.customerName} &nbsp;|&nbsp;
+            <span className="fw-bold text-slate"> Edited On: </span> {new Date(historyCompareData.editDate).toLocaleString('en-GB')}
+          </div>
+
+          <div className="comparison-grid">
+            <div className="snapshot-old-wrapper" style={{ padding: '20px' }}>
+              <h3 className="snapshot-title-old">Old Receipt Values</h3>
+              <div className="receipt-panel receipt-summary-box">
+                <div className="receipt-row receipt-three-col mb-0-5">
+                  <span className="fw-bold text-muted">Amount Received:</span>
+                  <span className="text-right fw-bold text-success">{formatMoney(historyCompareData.oldAmount || 0)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col mb-0-5">
+                  <span className="fw-bold text-muted">Less (Discount):</span>
+                  <span className="text-right text-danger">{formatMoney(historyCompareData.oldDiscount || 0)}</span>
+                </div>
+                <div className="receipt-total receipt-three-col border-top-light">
+                  <span className="fw-bold">Total Ledger Adjustment:</span>
+                  <span className="text-right fw-bold text-slate fs-lg">{formatMoney((historyCompareData.oldAmount || 0) + (historyCompareData.oldDiscount || 0))}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="snapshot-new-wrapper" style={{ padding: '20px' }}>
+              <h3 className="snapshot-title-new">New Edited Values</h3>
+              <div className="receipt-panel receipt-summary-box">
+                <div className="receipt-row receipt-three-col mb-0-5">
+                  <span className="fw-bold text-muted">Amount Received:</span>
+                  <span className="text-right fw-bold text-success">{formatMoney(historyCompareData.newAmount || 0)}</span>
+                </div>
+                <div className="receipt-row receipt-three-col mb-0-5">
+                  <span className="fw-bold text-muted">Less (Discount):</span>
+                  <span className="text-right text-danger">{formatMoney(historyCompareData.newDiscount || 0)}</span>
+                </div>
+                <div className="receipt-total receipt-three-col border-top-light">
+                  <span className="fw-bold">Total Ledger Adjustment:</span>
+                  <span className="text-right fw-bold text-slate fs-lg">{formatMoney((historyCompareData.newAmount || 0) + (historyCompareData.newDiscount || 0))}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT RECEIPT */}
+      {showEditModal && (
+        <div className="modal-overlay modal-overlay-top no-print">
+          <div className="modal-content modal-medium">
+            <h3 className="modal-header-title text-slate">Edit Receipt: {editForm.customReceiptId || formatReceiptId(editForm.id)}</h3>
+            <div className="modal-scroll-area">
+              <div className="form-group">
+                <label className="form-label">Customer Name (Locked):</label>
+                <input type="text" className="form-control bg-slate-50" value={editForm.customerName} disabled />
+                <small className="text-muted">Cannot change the customer of an existing receipt.</small>
+              </div>
+              <div className="sales-control-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label fw-bold text-success">Amount Received (₹):</label>
+                  <input type="number" className="form-control" value={editForm.amount} onChange={e => setEditForm({...editForm, amount: e.target.value})} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label fw-bold text-danger">Discount / Less (₹):</label>
+                  <input type="number" className="form-control" value={editForm.discountAmount} onChange={e => setEditForm({...editForm, discountAmount: e.target.value})} />
+                </div>
+              </div>
+              <div className="sales-control-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Payment Mode:</label>
+                  <select className="form-control" value={editForm.paymentMode} onChange={e => setEditForm({...editForm, paymentMode: e.target.value})}>
+                    <option value="Cash">Cash</option><option value="PhonePe">PhonePe</option><option value="GPay">GPay</option>
+                    <option value="Cheque">Cheque</option><option value="Bank Transfer">Bank Transfer / NEFT</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Receipt Date:</label>
+                  <input type="date" className="form-control" value={editForm.receiptDate} onChange={e => setEditForm({...editForm, receiptDate: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Custom Receipt No:</label>
+                <input type="text" className="form-control" value={editForm.customReceiptId} onChange={e => setEditForm({...editForm, customReceiptId: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Remarks:</label>
+                <input type="text" className="form-control" value={editForm.remarks} onChange={e => setEditForm({...editForm, remarks: e.target.value})} />
+              </div>
+            </div>
+            <div className="modal-actions justify-end mt-2 pt-1 border-top">
+              <button onClick={() => setShowEditModal(false)} className="btn btn-secondary">Cancel</button>
+              <button onClick={submitReceiptEdit} className="btn btn-success">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: VIEW RECEIPT DETAILS */}
-      {viewingReceipt && (
+      {viewingReceipt && !showEditModal && (
         <div className="modal-overlay modal-overlay-top no-print">
           <div className="modal-content modal-small">
             <h3 className="modal-header-title text-slate">Payment Receipt</h3>

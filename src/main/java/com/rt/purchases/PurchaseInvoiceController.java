@@ -110,7 +110,7 @@ public class PurchaseInvoiceController {
 
                 PurchaseInvoiceItem item = new PurchaseInvoiceItem();
                 item.setProduct(product);
-                item.setQuantity(quantity); 
+                item.setQuantity(quantity.intValue());
                 item.setSellType(sellType); // Save to DB
                 item.setPurchasePrice(purchasePrice);
                 item.setPurchaseInvoice(invoice);
@@ -226,7 +226,7 @@ public class PurchaseInvoiceController {
 
                 PurchaseInvoiceItem item = new PurchaseInvoiceItem();
                 item.setProduct(product);
-                item.setQuantity(quantity); 
+                item.setQuantity(quantity.intValue());
                 item.setSellType(sellType);
                 item.setPurchasePrice(purchasePrice);
                 item.setPurchaseInvoice(existingInvoice);

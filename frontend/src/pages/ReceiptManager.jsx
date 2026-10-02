@@ -93,6 +93,36 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
   const safeSearch = (searchQuery || '').toLowerCase();
   const safeReceiptSearch = (receiptSearch || '').toLowerCase();
 
+  // 🚀 NEW: TRUE DYNAMIC BALANCE ENGINE (Matches the Ledger perfectly)
+  const trueBalances = useMemo(() => {
+    const balances = {};
+    customers.forEach(c => balances[c.id] = 0);
+    
+    invoices.forEach(inv => {
+      const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const invNameNorm = normalizeName(inv.customerName);
+      const cust = customers.find(c => normalizeName(c.name) === invNameNorm);
+      
+      if (cust && inv.paymentMethod === 'Pay Later') {
+        const amount = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+        if (!inv.isReturn) balances[cust.id] += amount;
+        else balances[cust.id] -= amount; 
+      }
+    });
+
+    receipts.forEach(rec => {
+      const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const recNameNorm = normalizeName(rec.customerName);
+      const cust = customers.find(c => String(c.id) === String(rec.customerId) || normalizeName(c.name) === recNameNorm);
+      
+      if (cust) {
+        balances[cust.id] -= (Number(rec.amount) + Number(rec.discountAmount || 0));
+      }
+    });
+    
+    return balances;
+  }, [customers, invoices, receipts]);
+
   const receiptFilteredCustomers = customers.filter(c => 
     (c.name && c.name.toLowerCase().includes(safeReceiptSearch)) ||
     (c.mobile && c.mobile.includes(safeReceiptSearch)) ||
@@ -118,34 +148,62 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
   const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem);
   const paginatedReceiptHistory = filteredReceiptHistory.slice(indexOfFirstItem, indexOfLastItem);
 
+  // 🚀 UPGRADED: FIFO Math using actual Receipts and Returns, not static DB balances
   const pendingBills = useMemo(() => {
-    if (!activeCustomer || Number(activeCustomer.balance) <= 0) return [];
+    if (!activeCustomer) return [];
     const targetNameNorm = (activeCustomer.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // 1. Calculate true historical credits (Payments + Returns)
+    let totalCredits = 0;
+    receipts.forEach(r => {
+      const recNameNorm = (r.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (r.customerId === activeCustomer.id || recNameNorm === targetNameNorm) {
+        totalCredits += (Number(r.amount) + Number(r.discountAmount || 0));
+      }
+    });
+    invoices.forEach(inv => {
+      const invNameNorm = (inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (inv.isReturn && invNameNorm === targetNameNorm) {
+        totalCredits += Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+      }
+    });
+
+    // 2. Sort Pay Later bills OLDEST first
     const payLaterBills = invoices
       .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && ((inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === targetNameNorm))
-      .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
+      .sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime());
 
-    let remainingBalanceToAttribute = Number(activeCustomer.balance);
     const pending = [];
 
+    // 3. Apply credits progressively to find genuinely unpaid amounts
     for (const bill of payLaterBills) {
-      if (remainingBalanceToAttribute <= 0) break;
       const originalAmount = Number(bill.finalTotal || bill.totalAmount || 0);
-      if (remainingBalanceToAttribute >= originalAmount) {
-        pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: originalAmount });
-        remainingBalanceToAttribute -= originalAmount;
+      let due = originalAmount;
+      let paid = 0;
+
+      if (totalCredits >= due) {
+        // Fully paid by past history, skip it
+        totalCredits -= due;
+      } else if (totalCredits > 0) {
+        // Partially paid
+        paid = totalCredits;
+        due -= totalCredits;
+        totalCredits = 0;
+        pending.push({ ...bill, originalAmount, previouslyPaid: paid, dueAmount: due });
       } else {
-        const prevPaid = originalAmount - remainingBalanceToAttribute;
-        pending.push({ ...bill, originalAmount, previouslyPaid: prevPaid, dueAmount: remainingBalanceToAttribute });
-        remainingBalanceToAttribute = 0;
+        // Completely unpaid
+        pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: due });
       }
     }
-    return pending;
-  }, [activeCustomer, invoices]);
+    
+    // Reverse so the UI displays newest first
+    return pending.reverse();
+  }, [activeCustomer, invoices, receipts]);
 
   const liveAutoAllocation = useMemo(() => {
     const currentPayment = Number(globalAmount || 0) + Number(globalDiscount || 0);
     let remainingPayment = currentPayment;
+    
     const reversedPending = [...pendingBills].reverse();
     const allocatedReversed = reversedPending.map(bill => {
       let allocated = 0;
@@ -161,6 +219,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
       }
       return { ...bill, allocated, status };
     });
+    
     return allocatedReversed.reverse();
   }, [pendingBills, globalAmount, globalDiscount]);
 
@@ -294,7 +353,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
                             setRowPayments({}); setGlobalAmount('');
                           }}>
                             <span className="fw-bold">{c.name}</span>
-                            <span className="dropdown-location">{c.balance > 0 ? ` (Due: ${formatMoney(c.balance)})` : ''}</span>
+                            <span className="dropdown-location">{trueBalances[c.id] > 0 ? ` (Due: ${formatMoney(trueBalances[c.id])})` : ''}</span>
                           </li>
                         )) : <li className="dropdown-empty">No customers found</li>}
                       </ul>
@@ -355,7 +414,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
                     )}
                     <div style={{ borderLeft: isAutoModeActive ? '1px solid #cbd5e1' : 'none', paddingLeft: isAutoModeActive ? '20px' : '0' }}>
                       <span className="text-muted fw-bold d-block fs-sm">Total Customer Ledger Due:</span>
-                      <strong className="fs-lg text-danger">{formatMoney(activeCustomer.balance)}</strong>
+                      <strong className="fs-lg text-danger">{formatMoney(trueBalances[activeCustomer.id] || 0)}</strong>
                     </div>
                   </div>
                 )}

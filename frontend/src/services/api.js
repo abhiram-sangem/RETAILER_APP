@@ -7,21 +7,21 @@ export const productService = {
       return res.json()
     }),
 
-  addProduct: (name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox, piecePurchasePrice, pieceMrp, piecePrice ) =>
+  addProduct: (name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox, piecePurchasePrice, pieceMrp, piecePrice, barcode ) =>
     fetch(`${API_URL}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox , piecePurchasePrice, pieceMrp, piecePrice }), 
+      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox , piecePurchasePrice, pieceMrp, piecePrice, barcode }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add product')
       return res.json()
     }),
 
-  updateProduct: (id, name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox, piecePurchasePrice, pieceMrp, piecePrice ) =>
+  updateProduct: (id, name, purchasePrice, mrp, price, stock, hsnCode, piecesPerBox, piecePurchasePrice, pieceMrp, piecePrice, barcode ) =>
     fetch(`${API_URL}/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode , piecesPerBox , piecePurchasePrice, pieceMrp, piecePrice }), 
+      body: JSON.stringify({ name, purchasePrice, mrp, price, stock, hsnCode , piecesPerBox , piecePurchasePrice, pieceMrp, piecePrice, barcode }), 
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update product')
       return res.json()
@@ -296,4 +296,39 @@ export const receiptService = {
       if (!res.ok) throw new Error('Failed to load receipts');
       return res.json();
     })
+}
+
+export const employeeService = {
+  getEmployees: () =>
+    fetch(`${API_URL}/api/employees`).then(res => {
+      if (!res.ok) throw new Error('Failed to load employees')
+      return res.json()
+    }),
+
+  addEmployee: (employeeData) =>
+    fetch(`${API_URL}/api/employees`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(employeeData),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to add employee')
+      return res.json()
+    }),
+
+  updateEmployee: (id, employeeData) =>
+    fetch(`${API_URL}/api/employees/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(employeeData),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to update employee')
+      return res.json()
+    }),
+
+  deleteEmployee: (id) =>
+    fetch(`${API_URL}/api/employees/${id}`, {
+      method: 'DELETE',
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to delete employee')
+    }),
 }

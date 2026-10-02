@@ -153,9 +153,12 @@ export default function PrintableInvoice({ selectedInvoice, selectedInvoiceMath,
                 <div style={{ position: 'absolute', left: config.gstin.x, top: config.gstin.y, width: config.gstin.width, height: config.gstin.height || 'auto', fontSize: `${config.gstin.fontSize || 12}px`, fontFamily: config.gstin.fontFamily, fontWeight: 'bold' }}>
                   {config.gstin.text}
                 </div>
+                
+                {/* 🚀 DYNAMIC INVOICE / CREDIT NOTE TITLE */}
                 <div style={{ position: 'absolute', left: config.business.x, top: config.business.y, width: config.business.width, height: config.business.height || 'auto', fontSize: `${config.business.fontSize || 14}px`, fontFamily: config.business.fontFamily, textAlign: 'center', whiteSpace: 'pre-wrap', fontWeight: 'bold' }}>
-                  {config.business.text}
+                  {inv.isReturn ? config.business.text.replace(/Invoice/i, 'CREDIT NOTE') : config.business.text}
                 </div>
+                
                 <div style={{ position: 'absolute', left: config.logo.x, top: config.logo.y, width: config.logo.width, height: config.logo.height }}>
                   <img src={config.logo.url} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 </div>

@@ -20,11 +20,12 @@ import InvoiceBuilder from './pages/InvoiceBuilder';
 import SettingsManager from './pages/SettingsManager';
 import VendorManager from './pages/VendorManager';
 import CollectionPlanner from './pages/CollectionPlanner';
+import EmployeeManager from './pages/EmployeeManager';
 
 // --- API ---
 import { 
   productService, invoiceService, customerService, 
-  purchaseInvoiceService, historyService, receiptService, vendorService
+  purchaseInvoiceService, historyService, receiptService, vendorService, employeeService
 } from './services/api';
 
 export default function App() {
@@ -44,6 +45,9 @@ export default function App() {
   const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([]);
   const [receiptHistory, setReceiptHistory] = useState([]);
   const [vendors, setVendors] = useState([]);
+  
+  // New State for Employees
+  const [employees, setEmployees] = useState([]);
 
   useEffect(() => {
     loadProducts();
@@ -53,8 +57,10 @@ export default function App() {
     loadHistory();
     loadReceipts();
     loadVendors();
+    loadEmployees();
   }, []);
   
+  function loadEmployees() { employeeService.getEmployees().then(data => setEmployees(data || [])); }
   function loadVendors() { vendorService.getVendors().then(data => setVendors(data || [])); }
   function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])); }
   function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])); }
@@ -134,7 +140,7 @@ export default function App() {
           <SalesManager view={view} setView={setView} products={products} customers={customers} invoices={invoices} invoiceHistory={invoiceHistory} loadProducts={loadProducts} loadInvoices={loadInvoices} loadHistory={loadHistory} loadCustomers={loadCustomers} />
         )}
         {['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history', 'purchase-edit-compare'].includes(view) && (
-          <PurchaseManager view={view} setView={setView} products={products} purchaseInvoices={purchaseInvoices} purchaseInvoiceHistory={purchaseInvoiceHistory} loadProducts={loadProducts} loadPurchaseInvoices={loadPurchaseInvoices} loadHistory={loadHistory} />
+          <PurchaseManager view={view} setView={setView} products={products} purchaseInvoices={purchaseInvoices} purchaseInvoiceHistory={purchaseInvoiceHistory} vendors={vendors} loadProducts={loadProducts} loadPurchaseInvoices={loadPurchaseInvoices} loadHistory={loadHistory} />
         )}
         {['receipts', 'receipts-list', 'receipt-edit-history', 'receipt-edit-compare'].includes(view) && (
           <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} receiptHistory={receiptHistory} loadCustomers={loadCustomers} loadReceipts={loadReceipts} loadHistory={loadHistory} />
@@ -143,13 +149,16 @@ export default function App() {
           <DataTransfer customers={customers} products={products} loadCustomers={loadCustomers} loadProducts={loadProducts} loadHistory={loadHistory} />
         )}
         {view === 'reports' && (
-          <ReportsManager invoices={invoices} purchaseInvoices={purchaseInvoices} products={products} customers={customers} />
+          <ReportsManager invoices={invoices} purchaseInvoices={purchaseInvoices} products={products} customers={customers} vendors={vendors} />
         )}
         {view === 'settings' && (
           <SettingsManager />
         )}
         {view === 'vendors-manage' && (
           <VendorManager vendors={vendors} loadVendors={loadVendors} />
+        )}
+        {view === 'employees-manage' && (
+          <EmployeeManager employees={employees} loadEmployees={loadEmployees} />
         )}
         {view === 'collections' && (
           <CollectionPlanner customers={customers} invoices={invoices} />

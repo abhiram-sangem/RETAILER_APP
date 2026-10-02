@@ -94,7 +94,8 @@ public class InvoiceController {
                     stockDeduction = qty / product.getPiecesPerBox();
                 }
                 
-                Double currentStock = product.getStock() == null ? 0.0 : product.getStock();
+                Double currentStock = product.getStock();
+                if (currentStock == null) currentStock = 0.0;
                 product.setStock(Math.max(0.0, currentStock - stockDeduction));
                 productRepository.save(product);
 

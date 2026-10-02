@@ -39,7 +39,6 @@ public class ProductController {
         product.setId(null); 
         Product saved = productRepository.save(product);
         
-        // Note: Ensure InventoryLog entity is also updated to use Double for stock changes
         inventoryLogRepository.save(new InventoryLog(
             saved.getId(), saved.getName(), "NEW_PRODUCT", 
             saved.getStock(), saved.getStock(), "Initial Stock Entry"
@@ -66,7 +65,6 @@ public class ProductController {
             }
             
             if (existing != null) {
-                // CHANGED: Use Double instead of Integer
                 Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
                 Double newStock = p.getStock() == null ? 0.0 : p.getStock();
                 
@@ -76,11 +74,13 @@ public class ProductController {
                 if (p.getMrp() != null && p.getMrp() > 0) existing.setMrp(p.getMrp());
                 if (p.getPrice() != null && p.getPrice() > 0) existing.setPrice(p.getPrice());
                 
-                // Set piece data if it exists in the payload
                 if (p.getPiecesPerBox() != null) existing.setPiecesPerBox(p.getPiecesPerBox());
                 if (p.getPiecePurchasePrice() != null) existing.setPiecePurchasePrice(p.getPiecePurchasePrice());
                 if (p.getPieceMrp() != null) existing.setPieceMrp(p.getPieceMrp());
                 if (p.getPiecePrice() != null) existing.setPiecePrice(p.getPiecePrice());
+                
+                // Keep the new barcode if provided in the bulk upload
+                if (p.getBarcode() != null && !p.getBarcode().isEmpty()) existing.setBarcode(p.getBarcode());
 
                 existing.setStock(newStock);
                 
@@ -111,7 +111,6 @@ public class ProductController {
     @PutMapping("/{id}")
     public Product updateProduct(@PathVariable Long id, @RequestBody Product details) {
         Product product = productRepository.findById(id).orElseThrow();
-        // CHANGED: Use Double instead of Integer
         Double oldStock = product.getStock() == null ? 0.0 : product.getStock();
         Double newStock = details.getStock() == null ? 0.0 : details.getStock();
         
@@ -125,6 +124,9 @@ public class ProductController {
         product.setPiecePurchasePrice(details.getPiecePurchasePrice());
         product.setPieceMrp(details.getPieceMrp());
         product.setPiecePrice(details.getPiecePrice());
+        
+        // Save the updated barcode
+        product.setBarcode(details.getBarcode());
 
         product.setStock(newStock);
         

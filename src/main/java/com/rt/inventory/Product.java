@@ -26,6 +26,9 @@ public class Product {
     private Double piecePurchasePrice;
     private Double pieceMrp;
     private Double piecePrice;
+    
+    // --- NEW FIELD FOR BARCODE SCANNING ---
+    private String barcode;
 
     public Product() {}
 
@@ -81,4 +84,7 @@ public class Product {
 
     public Double getPiecePrice() { return piecePrice; }
     public void setPiecePrice(Double piecePrice) { this.piecePrice = piecePrice; }
+
+    public String getBarcode() { return barcode; }
+    public void setBarcode(String barcode) { this.barcode = barcode; }
 }

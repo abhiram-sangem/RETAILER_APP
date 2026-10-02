@@ -77,10 +77,40 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
     </div>
   );
 
+  // 🚀 TRUE DYNAMIC BALANCE ENGINE
+  const trueBalances = useMemo(() => {
+    const balances = {};
+    customers.forEach(c => balances[c.id] = 0);
+    
+    invoices.forEach(inv => {
+      const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const invNameNorm = normalizeName(inv.customerName);
+      const cust = customers.find(c => normalizeName(c.name) === invNameNorm);
+      
+      if (cust && inv.paymentMethod === 'Pay Later') {
+        // FIXED: Using Math.abs() to prevent double-negatives when subtracting returns
+        const amount = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+        if (!inv.isReturn) balances[cust.id] += amount;
+        else balances[cust.id] -= amount; 
+      }
+    });
+
+    receipts.forEach(rec => {
+      const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const recNameNorm = normalizeName(rec.customerName);
+      const cust = customers.find(c => String(c.id) === String(rec.customerId) || normalizeName(c.name) === recNameNorm);
+      
+      if (cust) {
+        balances[cust.id] -= (Number(rec.amount) + Number(rec.discountAmount || 0));
+      }
+    });
+    
+    return balances;
+  }, [customers, invoices, receipts]);
+
   const customerStatementData = useMemo(() => {
     if (!viewingCustomerStatement) return [];
     
-    // Bulletproof matching logic
     const targetId = String(viewingCustomerStatement.id);
     const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const targetNameNorm = normalizeName(viewingCustomerStatement.name);
@@ -91,7 +121,8 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
       const invNameNorm = normalizeName(inv.customerName);
       if (invNameNorm === targetNameNorm) {
         const isPayLater = inv.paymentMethod === 'Pay Later';
-        const amount = Number(inv.finalTotal || inv.totalAmount || 0);
+        // FIXED: Using Math.abs() to ensure clean Debit/Credit assignments
+        const amount = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
         
         let debit = 0; let credit = 0;
         if (!inv.isReturn) {
@@ -128,7 +159,15 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
       }
     });
 
-    statement.sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
+    // Fallback ID sort ensures edited bills stay in perfect chronological order
+    statement.sort((a, b) => {
+      const timeDiff = a.sortDate.getTime() - b.sortDate.getTime();
+      if (timeDiff !== 0) return timeDiff;
+      const idA = parseInt(a.ref.replace(/[^0-9]/g, '') || '0', 10);
+      const idB = parseInt(b.ref.replace(/[^0-9]/g, '') || '0', 10);
+      return idA - idB;
+    });
+
     let runningBalance = 0;
     statement.forEach(item => {
       runningBalance += item.debit; runningBalance -= item.credit; 
@@ -191,7 +230,7 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
             <div className="card stat-card ledger-stats-card">
               <h4>Total Outstanding Market Dues</h4>
               <div className="text-danger fw-bold fs-xxl mt-auto">
-                {formatMoney(customers.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0))}
+                {formatMoney(customers.reduce((sum, c) => sum + (trueBalances[c.id] > 0 ? trueBalances[c.id] : 0), 0))}
               </div>
             </div>
           </div>
@@ -200,16 +239,18 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
             <table className="block-table data-table">
               <thead><tr><th>Customer Name</th><th>Contact</th><th>Location</th><th>Current Balance</th></tr></thead>
               <tbody>
-                {paginatedCustomers.map(c => (
+                {paginatedCustomers.map(c => {
+                  const trueBal = trueBalances[c.id] || 0;
+                  return (
                   <tr key={c.id} className="product-row available" onClick={() => { setViewingCustomerStatement(c); setView('ledger-statement'); }}>
                     <td className="fw-bold cell-padded">{c.name}</td>
                     <td className="cell-padded">{c.mobile || 'N/A'}</td>
                     <td className="cell-padded">{c.location || c.city || 'N/A'}</td>
-                    <td className={`fw-bold cell-padded ${c.balance > 0 ? 'text-danger' : (c.balance < 0 ? 'text-success' : 'text-muted')}`}>
-                      {formatMoney(Math.abs(c.balance))} {c.balance > 0 ? '(Due)' : (c.balance < 0 ? '(Advance)' : '')}
+                    <td className={`fw-bold cell-padded ${trueBal > 0 ? 'text-danger' : (trueBal < 0 ? 'text-success' : 'text-muted')}`}>
+                      {formatMoney(Math.abs(trueBal))} {trueBal > 0 ? '(Due)' : (trueBal < 0 ? '(Advance)' : '')}
                     </td>
                   </tr>
-                ))}
+                )})}
                 {paginatedCustomers.length === 0 && <tr><td colSpan={4} className="empty-state">No customers found.</td></tr>}
               </tbody>
             </table>
@@ -236,7 +277,12 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
           <div className="invoice-summary-grid mt-1 invoice-summary-bg">
             <div className="info-block"><span className="info-label">Customer Name</span><strong className="info-value text-primary fs-xxl">{viewingCustomerStatement.name}</strong></div>
             <div className="info-block"><span className="info-label">Contact / Location</span><strong className="info-value fs-lg">{viewingCustomerStatement.mobile || 'N/A'} <br/> {viewingCustomerStatement.city || viewingCustomerStatement.location || ''}</strong></div>
-            <div className="info-block"><span className="info-label">Total Outstanding Balance</span><strong className={`info-value fs-xxl ${viewingCustomerStatement.balance > 0 ? 'text-danger' : 'text-success'}`}>{formatMoney(viewingCustomerStatement.balance)}</strong></div>
+            <div className="info-block">
+              <span className="info-label">Total Outstanding Balance</span>
+              <strong className={`info-value fs-xxl ${(trueBalances[viewingCustomerStatement.id] || 0) > 0 ? 'text-danger' : 'text-success'}`}>
+                {formatMoney(trueBalances[viewingCustomerStatement.id] || 0)}
+              </strong>
+            </div>
           </div>
 
           <div className="ledger-split-layout">
@@ -309,10 +355,10 @@ export default function LedgerManager({ view, setView, customers, invoices, rece
                     </div>
 
                     <div className="receipt-panel receipt-summary-box">
-                      <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Subtotal:</span><span className="text-right text-muted">{formatMoney(ledgerPreview.data.grossTotal || ledgerPreview.data.totalAmount)}</span></div>
-                      {ledgerPreview.data.discountPercent > 0 && <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Discount ({ledgerPreview.data.discountPercent}%):</span><span className="text-right text-danger">-{formatMoney((ledgerPreview.data.grossTotal || 0) * (ledgerPreview.data.discountPercent / 100))}</span></div>}
-                      {(ledgerPreview.data.cgst > 0 || ledgerPreview.data.sgst > 0) && <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Tax (CGST+SGST):</span><span className="text-right text-muted">+{formatMoney((ledgerPreview.data.cgst || 0) + (ledgerPreview.data.sgst || 0))}</span></div>}
-                      <div className="receipt-total receipt-three-col border-top-light"><span className="fw-bold">Final Total:</span><span className={`text-right fw-bold fs-lg ${ledgerPreview.isReturn ? 'text-danger' : 'text-success'}`}>{formatMoney(ledgerPreview.data.finalTotal || ledgerPreview.data.totalAmount)}</span></div>
+                      <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Subtotal:</span><span className="text-right text-muted">{formatMoney(Math.abs(ledgerPreview.data.grossTotal || ledgerPreview.data.totalAmount))}</span></div>
+                      {ledgerPreview.data.discountPercent > 0 && <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Discount ({ledgerPreview.data.discountPercent}%):</span><span className="text-right text-danger">-{formatMoney(Math.abs((ledgerPreview.data.grossTotal || 0) * (ledgerPreview.data.discountPercent / 100)))}</span></div>}
+                      {(ledgerPreview.data.cgst > 0 || ledgerPreview.data.sgst > 0) && <div className="receipt-row receipt-three-col mb-0-5"><span className="fw-bold text-muted">Tax (CGST+SGST):</span><span className="text-right text-muted">+{formatMoney(Math.abs((ledgerPreview.data.cgst || 0) + (ledgerPreview.data.sgst || 0)))}</span></div>}
+                      <div className="receipt-total receipt-three-col border-top-light"><span className="fw-bold">Final Total:</span><span className={`text-right fw-bold fs-lg ${ledgerPreview.isReturn ? 'text-danger' : 'text-success'}`}>{formatMoney(Math.abs(ledgerPreview.data.finalTotal || ledgerPreview.data.totalAmount))}</span></div>
                     </div>
                   </div>
                 )}

@@ -329,13 +329,13 @@ export default function SalesManager({
     setView('payment-screen');
   }
 
+  // 🚀 FIXED: Skips the Invoice Details screen and directly opens the print dialog while staying on the New Sale screen
   function submitFinalSale(isDirectPayLater = false) {
     if (!activeTab.cart.length) return window.alert('Cart is empty.');
     if (!activeTab.activeCustomer) return window.alert('Please select a customer before submitting.');
     
     const finalPaymentMethod = (activeTab.isPayLater || isDirectPayLater) ? 'Pay Later' : activeTab.paymentMethod;
 
-    // VERY IMPORTANT: Format the cart payload so the backend gets the exact piece price if applicable
     const processedCartPayload = activeTab.cart.map(item => ({
       ...item,
       price: item.sellType === 'Piece' ? item.piecePrice : item.price
@@ -349,14 +349,16 @@ export default function SalesManager({
         activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
         activeTab.customInvoiceId
       ).then(invoice => {
-        window.alert(`Sale ${formatInvoiceId(invoice.id)} updated successfully!`);
         closeTab(activeTabId, { stopPropagation: () => {} });
         loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
         
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
-          setView('invoice-details');
-          setTimeout(() => window.print(), 800); 
+          setView('list'); // Do not redirect to the sales list! Keep them on the New Sale dashboard.
+          setTimeout(() => {
+            window.print();
+            setSelectedInvoice(null); // Clear the printable invoice from DOM after printing
+          }, 800); 
         });
       }).catch(err => window.alert('Failed to update sale. ' + err.message));
     } else {
@@ -367,14 +369,16 @@ export default function SalesManager({
         activeTab.dueDays ? parseInt(activeTab.dueDays, 10) : null, 
         activeTab.customInvoiceId
       ).then(invoice => {
-        window.alert(`Sale ${formatInvoiceId(invoice.id)} completed successfully!`);
         closeTab(activeTabId, { stopPropagation: () => {} });
         loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
 
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
-          setView('invoice-details');
-          setTimeout(() => window.print(), 800);
+          setView('list'); // Keep them on the New Sale dashboard!
+          setTimeout(() => {
+            window.print();
+            setSelectedInvoice(null);
+          }, 800);
         });
       }).catch(err => window.alert('Failed to complete sale. ' + err.message));
     }
@@ -604,7 +608,6 @@ export default function SalesManager({
                             <td className="fw-bold">{idx + 1}</td>
                             <td><span className="product-name-large">{item.name || 'Unknown Product'}</span></td>
                             
-                            {/* UPDATED: Dropdown is always visible, but disabled if no pieces exist */}
                             <td>
                                 <select 
                                   className="form-control mb-0" 

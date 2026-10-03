@@ -35,11 +35,9 @@ export default function CustomerManager({ customers, loadCustomers }) {
     const { name, gstno, mobile, city, location, state } = customerForm;
     if (!name?.trim()) return window.alert('Name is required');
     
-    const existingBalance = isCustomerEditMode ? (customers.find(c => c.id === editingCustomerId)?.balance || 0) : 0;
-
     const action = isCustomerEditMode
-      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city, location, existingBalance, state)
-      : customerService.addCustomer(name, gstno, mobile, city, location, existingBalance, state);
+      ? customerService.updateCustomer(editingCustomerId, name, gstno, mobile, city, location, state)
+      : customerService.addCustomer(name, gstno, mobile, city, location, state);
       
     action.then(() => { loadCustomers(); closeCustomerModal(); });
   };

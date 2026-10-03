@@ -1,4 +1,4 @@
-A Simple App for Retailer Billing and Product Management
+RetailSuite - Retail Billing and Management
 
 A full-stack application featuring a Spring Boot backend and an integrated React frontend. The project is structured so that the frontend assets are automatically compiled and served directly by the backend server when running from your IDE.
 

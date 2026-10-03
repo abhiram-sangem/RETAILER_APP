@@ -2,8 +2,14 @@ package com.rt.customers;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+
+import com.rt.customers.dto.CreateCustomerRequest;
+import com.rt.customers.dto.CustomerImportRequest;
+import com.rt.customers.dto.CustomerResponse;
+import com.rt.customers.dto.UpdateCustomerRequest;
 
 @Service
 public class CustomerService {
@@ -14,26 +20,35 @@ public class CustomerService {
         this.customerRepository = customerRepository;
     }
 
-    public List<Customer> getAllCustomers() {
-        return customerRepository.findAll();
+    public List<CustomerResponse> getAllCustomers() {
+        return customerRepository.findAll().stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
     }
 
-    public Customer createCustomer(Customer customer) {
-        validateCustomer(customer);
+    public CustomerResponse createCustomer(CreateCustomerRequest request) {
+        validateCustomerName(request == null ? null : request.name());
 
-        customer.setId(null);
-        return customerRepository.save(customer);
+        Customer customer = new Customer();
+        customer.setName(request.name().trim());
+        customer.setGstno(request.gstno());
+        customer.setMobile(request.mobile());
+        customer.setCity(request.city());
+        customer.setLocation(request.location());
+        customer.setState(request.state());
+
+        return toResponse(customerRepository.save(customer));
     }
 
-    public List<Customer> createCustomersBulk(List<Customer> customers) {
-        List<Customer> savedCustomers = new ArrayList<>();
+    public List<CustomerResponse> createCustomersBulk(List<CustomerImportRequest> customers) {
+        List<CustomerResponse> savedCustomers = new ArrayList<>();
 
-        for (Customer incoming : customers) {
+        for (CustomerImportRequest incoming : customers) {
             if (incoming == null) {
                 continue;
             }
 
-            if (incoming.getName() == null || incoming.getName().trim().isEmpty()) {
+            if (incoming.name() == null || incoming.name().trim().isEmpty()) {
                 continue;
             }
 
@@ -41,50 +56,47 @@ public class CustomerService {
 
             if (existing != null) {
                 applyCustomerUpdate(existing, incoming);
-                savedCustomers.add(customerRepository.save(existing));
+                savedCustomers.add(toResponse(customerRepository.save(existing)));
             } else {
                 Customer newCustomer = new Customer();
-                newCustomer.setName(incoming.getName().trim());
-                newCustomer.setGstno(incoming.getGstno());
-                newCustomer.setMobile(incoming.getMobile());
-                newCustomer.setCity(incoming.getCity());
-                newCustomer.setLocation(incoming.getLocation());
-                newCustomer.setState(incoming.getState());
-                newCustomer.setBalance(incoming.getBalance());
-                savedCustomers.add(customerRepository.save(newCustomer));
+                newCustomer.setName(incoming.name().trim());
+                newCustomer.setGstno(incoming.gstno());
+                newCustomer.setMobile(incoming.mobile());
+                newCustomer.setCity(incoming.city());
+                newCustomer.setLocation(incoming.location());
+                newCustomer.setState(incoming.state());
+                newCustomer.setBalance(incoming.balance());
+                savedCustomers.add(toResponse(customerRepository.save(newCustomer)));
             }
         }
 
         return savedCustomers;
     }
 
-    public Customer updateCustomer(Long id, Customer customerDetails) {
+    public CustomerResponse updateCustomer(Long id, UpdateCustomerRequest customerDetails) {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Customer not found with id: " + id));
 
-        if (customerDetails.getName() != null && !customerDetails.getName().trim().isEmpty()) {
-            customer.setName(customerDetails.getName().trim());
+        if (customerDetails.name() != null && !customerDetails.name().trim().isEmpty()) {
+            customer.setName(customerDetails.name().trim());
         }
-        if (customerDetails.getGstno() != null) {
-            customer.setGstno(customerDetails.getGstno());
+        if (customerDetails.gstno() != null) {
+            customer.setGstno(customerDetails.gstno());
         }
-        if (customerDetails.getMobile() != null) {
-            customer.setMobile(customerDetails.getMobile());
+        if (customerDetails.mobile() != null) {
+            customer.setMobile(customerDetails.mobile());
         }
-        if (customerDetails.getCity() != null) {
-            customer.setCity(customerDetails.getCity());
+        if (customerDetails.city() != null) {
+            customer.setCity(customerDetails.city());
         }
-        if (customerDetails.getLocation() != null) {
-            customer.setLocation(customerDetails.getLocation());
+        if (customerDetails.location() != null) {
+            customer.setLocation(customerDetails.location());
         }
-        if (customerDetails.getState() != null) {
-            customer.setState(customerDetails.getState());
-        }
-        if (customerDetails.getBalance() != null) {
-            customer.setBalance(customerDetails.getBalance());
+        if (customerDetails.state() != null) {
+            customer.setState(customerDetails.state());
         }
 
-        return customerRepository.save(customer);
+        return toResponse(customerRepository.save(customer));
     }
 
     public void deleteCustomer(Long id) {
@@ -94,27 +106,23 @@ public class CustomerService {
         customerRepository.deleteById(id);
     }
 
-    private void validateCustomer(Customer customer) {
-        if (customer == null) {
-            throw new RuntimeException("Customer cannot be null");
-        }
-
-        if (customer.getName() == null || customer.getName().trim().isEmpty()) {
+    private void validateCustomerName(String name) {
+        if (name == null || name.trim().isEmpty()) {
             throw new RuntimeException("Customer name is required");
         }
     }
 
-    private Customer findExistingCustomer(Customer incoming) {
-        if (incoming.getMobile() != null && !incoming.getMobile().trim().isEmpty()) {
-            String mobile = incoming.getMobile().trim();
+    private Customer findExistingCustomer(CustomerImportRequest incoming) {
+        if (incoming.mobile() != null && !incoming.mobile().trim().isEmpty()) {
+            String mobile = incoming.mobile().trim();
             return customerRepository.findAll().stream()
                     .filter(customer -> mobile.equals(customer.getMobile()))
                     .findFirst()
                     .orElse(null);
         }
 
-        if (incoming.getName() != null && !incoming.getName().trim().isEmpty()) {
-            String name = incoming.getName().trim();
+        if (incoming.name() != null && !incoming.name().trim().isEmpty()) {
+            String name = incoming.name().trim();
             return customerRepository.findAll().stream()
                     .filter(customer -> name.equals(customer.getName()))
                     .findFirst()
@@ -124,24 +132,36 @@ public class CustomerService {
         return null;
     }
 
-    private void applyCustomerUpdate(Customer existing, Customer incoming) {
-        if (incoming.getGstno() != null && !incoming.getGstno().isEmpty()) {
-            existing.setGstno(incoming.getGstno());
+    private void applyCustomerUpdate(Customer existing, CustomerImportRequest incoming) {
+        if (incoming.gstno() != null && !incoming.gstno().isEmpty()) {
+            existing.setGstno(incoming.gstno());
         }
-        if (incoming.getMobile() != null && !incoming.getMobile().isEmpty()) {
-            existing.setMobile(incoming.getMobile());
+        if (incoming.mobile() != null && !incoming.mobile().isEmpty()) {
+            existing.setMobile(incoming.mobile());
         }
-        if (incoming.getCity() != null && !incoming.getCity().isEmpty()) {
-            existing.setCity(incoming.getCity());
+        if (incoming.city() != null && !incoming.city().isEmpty()) {
+            existing.setCity(incoming.city());
         }
-        if (incoming.getLocation() != null && !incoming.getLocation().isEmpty()) {
-            existing.setLocation(incoming.getLocation());
+        if (incoming.location() != null && !incoming.location().isEmpty()) {
+            existing.setLocation(incoming.location());
         }
-        if (incoming.getState() != null && !incoming.getState().isEmpty()) {
-            existing.setState(incoming.getState());
+        if (incoming.state() != null && !incoming.state().isEmpty()) {
+            existing.setState(incoming.state());
         }
-        if (incoming.getBalance() != null) {
-            existing.setBalance(incoming.getBalance());
+        if (incoming.balance() != null) {
+            existing.setBalance(incoming.balance());
         }
+    }
+
+    private CustomerResponse toResponse(Customer customer) {
+        return new CustomerResponse(
+                customer.getId(),
+                customer.getName(),
+                customer.getGstno(),
+                customer.getMobile(),
+                customer.getCity(),
+                customer.getLocation(),
+                customer.getBalance(),
+                customer.getState());
     }
 }

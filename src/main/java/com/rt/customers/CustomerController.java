@@ -13,6 +13,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rt.customers.dto.CreateCustomerRequest;
+import com.rt.customers.dto.CustomerImportRequest;
+import com.rt.customers.dto.CustomerResponse;
+import com.rt.customers.dto.UpdateCustomerRequest;
+
 @RestController
 @RequestMapping("/api/customers")
 @CrossOrigin(origins = "*")
@@ -25,12 +30,12 @@ public class CustomerController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Customer>> getAllCustomers() {
+    public ResponseEntity<List<CustomerResponse>> getAllCustomers() {
         return ResponseEntity.ok(customerService.getAllCustomers());
     }
 
     @PostMapping
-    public ResponseEntity<Customer> addCustomer(@RequestBody Customer customer) {
+    public ResponseEntity<CustomerResponse> addCustomer(@RequestBody CreateCustomerRequest customer) {
         try {
             return ResponseEntity.ok(customerService.createCustomer(customer));
         } catch (RuntimeException e) {
@@ -39,12 +44,12 @@ public class CustomerController {
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<List<Customer>> addCustomersBulk(@RequestBody List<Customer> customers) {
+    public ResponseEntity<List<CustomerResponse>> addCustomersBulk(@RequestBody List<CustomerImportRequest> customers) {
         return ResponseEntity.ok(customerService.createCustomersBulk(customers));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Customer> updateCustomer(@PathVariable Long id, @RequestBody Customer customerDetails) {
+    public ResponseEntity<CustomerResponse> updateCustomer(@PathVariable Long id, @RequestBody UpdateCustomerRequest customerDetails) {
         try {
             return ResponseEntity.ok(customerService.updateCustomer(id, customerDetails));
         } catch (RuntimeException e) {

@@ -122,21 +122,21 @@ export const customerService = {
       return res.json()
     }),
 
-  addCustomer: (name, gstno, mobile, city, location, balance, state) =>
+  addCustomer: (name, gstno, mobile, city, location, state) =>
     fetch(`${API_URL}/api/customers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, gstno, mobile, city, location, balance, state }),
+      body: JSON.stringify({ name, gstno, mobile, city, location, state }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to add customer')
       return res.json()
     }),
 
-  updateCustomer: (id, name, gstno, mobile, city, location, balance, state) =>
+  updateCustomer: (id, name, gstno, mobile, city, location, state) =>
     fetch(`${API_URL}/api/customers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, gstno, mobile, city, location, balance, state }),
+      body: JSON.stringify({ name, gstno, mobile, city, location, state }),
     }).then(res => {
       if (!res.ok) throw new Error('Failed to update customer')
       return res.json()
